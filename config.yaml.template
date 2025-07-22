@@ -1,0 +1,27 @@
+token: "YOUR_BOT_TOKEN_HERE"
+prefix: "!"
+database_path: "data/immortal_beasts.db"
+backup_interval_hours: 6
+spawn_interval_min: 15
+spawn_interval_max: 45
+log_level: "INFO"
+
+# Inventory limits
+normal_user_beast_limit: 6
+special_role_beast_limit: 8
+personal_role_beast_limit: 10
+
+# Role IDs (replace with your actual role IDs)
+special_role_ids: [YOUR_ROLE_ID_1, YOUR_ROLE_ID_2]
+personal_role_id: YOUR_PERSONAL_ROLE_ID
+
+# XP System (replace with your actual channel IDs)  
+xp_chat_channel_ids: [YOUR_CHANNEL_ID_1, YOUR_CHANNEL_ID_2, YOUR_CHANNEL_ID_3, YOUR_CHANNEL_ID_4]
+xp_per_message: 5
+xp_cooldown_seconds: 60
+
+# Starting resources
+starting_beast_stones: 1000
+
+# Cooldowns
+adopt_cooldown_hours: 48

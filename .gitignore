@@ -1,0 +1,11 @@
+# Protect sensitive files
+config.yaml
+
+# Database and logs
+data/
+backups/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
