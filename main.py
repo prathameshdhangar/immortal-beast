@@ -22,6 +22,25 @@ from discord.ext import commands, tasks
 import aiofiles
 import yaml
 from pydantic import BaseModel, Field, field_validator
+import os
+import discord
+from discord.ext import commands
+
+# Get token from environment variable
+TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+
+if not TOKEN:
+    print("Error: DISCORD_TOKEN environment variable not set")
+    exit(1)
+
+# Your bot code here
+bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())
+
+@bot.event
+async def on_ready():
+    print(f'{bot.user} has connected to Discord!')
+
+bot.run(TOKEN)
 
 
 # ============================================================================
