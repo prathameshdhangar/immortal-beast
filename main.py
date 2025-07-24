@@ -25,30 +25,17 @@ from pydantic import BaseModel, Field, field_validator
 import threading
 from flask import Flask
 
-# ============================================================================
 # Configuration Management
-# ============================================================================
-
 
 class BotConfig(BaseModel):
     """Bot configuration with validation"""
     token: str = Field(..., description="Discord bot token")
     prefix: str = Field(default="!", description="Command prefix")
-    database_path: str = Field(default="data/immortal_beasts.db",
-                               description="Database file path")
-    backup_interval_hours: int = Field(default=6,
-                                       ge=1,
-                                       le=24,
-                                       description="Backup interval in hours")
-    backup_retention_count: int = Field(
-        default=10, ge=1, le=100, description="Number of backups to retain")
-    backup_max_size_mb: int = Field(
-        default=100,
-        ge=10,
-        le=1000,
-        description="Maximum total backup size in MB")
-    backup_enabled: bool = Field(
-        default=True, description="Enable/disable automatic backups")
+    database_path: str = Field(default="data/immortal_beasts.db", description="Database file path")
+    backup_interval_hours: int = Field(default=6, ge=1, le=24, description="Backup interval in hours")
+    backup_retention_count: int = Field(default=10, ge=1, le=100, description="Number of backups to retain")
+    backup_max_size_mb: int = Field(default=100, ge=10, le=1000, description="Maximum total backup size in MB")
+    backup_enabled: bool = Field(default=True, description="Enable/disable automatic backups")
     spawn_interval_min: int = Field(
         default=15,
         ge=5,
@@ -172,37 +159,29 @@ class BotConfig(BaseModel):
             backup_interval = 12  # Backup twice daily
         else:  # Development
             backup_retention = 10  # Keep 10 backups locally
-            backup_interval = 6  # Backup every 6 hours
+            backup_interval = 6   # Backup every 6 hours
 
         return cls(
             token=token,
             prefix=os.getenv('BOT_PREFIX', '!'),
             database_path='/tmp/immortal_beasts.db',  # Use /tmp for Render
             special_role_ids=special_role_ids,
-            personal_role_id=int(
-                os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
+            personal_role_id=int(os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
             xp_chat_channel_ids=xp_channel_ids,
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
-            backup_interval_hours=int(
-                os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
-            backup_retention_count=int(
-                os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
+            backup_interval_hours=int(os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
+            backup_retention_count=int(os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
             backup_max_size_mb=int(os.getenv('BACKUP_MAX_SIZE_MB', '100')),
-            backup_enabled=os.getenv('BACKUP_ENABLED',
-                                     'true').lower() == 'true',
+            backup_enabled=os.getenv('BACKUP_ENABLED', 'true').lower() == 'true',
             spawn_interval_min=int(os.getenv('SPAWN_INTERVAL_MIN', '15')),
             spawn_interval_max=int(os.getenv('SPAWN_INTERVAL_MAX', '45')),
             xp_per_message=int(os.getenv('XP_PER_MESSAGE', '5')),
             xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '60')),
-            starting_beast_stones=int(
-                os.getenv('STARTING_BEAST_STONES', '1000')),
-            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')))
+            starting_beast_stones=int(os.getenv('STARTING_BEAST_STONES', '1000')),
+            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48'))
+        )
 
-
-# ============================================================================
 # Enums and Constants
-# ============================================================================
-
 
 class BeastRarity(Enum):
     """Beast rarity levels"""
@@ -229,7 +208,7 @@ class BeastRarity(Enum):
     @property
     def catch_rate(self) -> int:
         """Base catch rate percentage"""
-        rates = {1: 95, 2: 80, 3: 65, 4: 40, 5: 10, 6: 1}
+        rates = {1: 90, 2: 80, 3: 65, 4: 30, 5: 2, 6: 0.1}
         return rates[self.value]
 
     @property
@@ -251,11 +230,7 @@ class UserRole(Enum):
     SPECIAL = "special"
     PERSONAL = "personal"
 
-
-# ============================================================================
 # Data Models
-# ============================================================================
-
 
 @dataclass
 class BeastStats:
@@ -453,15 +428,16 @@ class BeastStats:
         return self.hp - old_hp
 
 
-    @dataclass
-    class BeastTemplate:
-        """Template for creating new beasts"""
-        name: str
-        rarity: BeastRarity
-        tendency: str
-        base_hp_range: Tuple[int, int]
-        base_attack_range: Tuple[int, int]
-        description: str = ""
+@dataclass
+class BeastTemplate:
+    """Template for creating new beasts"""
+    name: str
+    rarity: BeastRarity
+    tendency: str
+    location: str
+    base_hp_range: Tuple[int, int]
+    base_attack_range: Tuple[int, int]
+    description: str = ""
 
     def create_beast(self) -> 'Beast':
         """Create a new beast instance from this template"""
@@ -476,10 +452,12 @@ class BeastStats:
                            speed=random.randint(10, 50))
 
         return Beast(name=self.name,
-             rarity=self.rarity,
-             tendency=self.tendency,
-             stats=stats,
-             description=self.description)
+                     rarity=self.rarity,
+                     tendency=self.tendency,
+                     location=self.location,
+                     stats=stats,
+                     description=self.description)
+
 
 @dataclass
 class Beast:
@@ -487,6 +465,7 @@ class Beast:
     name: str
     rarity: BeastRarity
     tendency: str
+    location: str
     stats: BeastStats
     description: str = ""
     caught_at: datetime.datetime = None
@@ -505,6 +484,7 @@ class Beast:
             'name': self.name,
             'rarity': self.rarity.value,
             'tendency': self.tendency,
+            'location': self.location,
             'stats': asdict(self.stats),
             'description': self.description,
             'caught_at': self.caught_at.isoformat(),
@@ -517,14 +497,15 @@ class Beast:
         """Create beast from dictionary"""
         stats = BeastStats(**data['stats'])
         return cls(name=data['name'],
-               rarity=BeastRarity(data['rarity']),
-               tendency=data['tendency'],
-               stats=stats,
-               description=data.get('description', ''),
-               caught_at=datetime.datetime.fromisoformat(
-                   data['caught_at']),
-               owner_id=data.get('owner_id'),
-               unique_id=data.get('unique_id'))
+                   rarity=BeastRarity(data['rarity']),
+                   tendency=data['tendency'],
+                   location=data['location'],
+                   stats=stats,
+                   description=data.get('description', ''),
+                   caught_at=datetime.datetime.fromisoformat(
+                       data['caught_at']),
+                   owner_id=data.get('owner_id'),
+                   unique_id=data.get('unique_id'))
 
     @property
     def power_level(self) -> int:
@@ -569,11 +550,7 @@ class User:
         time_since_last = datetime.datetime.now() - self.last_xp_gain
         return time_since_last.total_seconds() >= cooldown_seconds
 
-
-# ============================================================================
 # Database Layer
-# ============================================================================
-
 
 class DatabaseInterface(ABC):
     """Abstract database interface"""
@@ -824,9 +801,7 @@ class SQLiteDatabase(DatabaseInterface):
             logging.error(f"Failed to delete beast {beast_id}: {e}")
             return False
 
-    async def backup_database(self,
-                              backup_dir: str = "backups",
-                              keep_count: int = 10) -> Optional[str]:
+    async def backup_database(self, backup_dir: str = "backups", keep_count: int = 10) -> Optional[str]:
         """Create database backup with automatic cleanup"""
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
@@ -851,9 +826,11 @@ class SQLiteDatabase(DatabaseInterface):
         """Remove old backup files, keeping only the latest ones"""
         try:
             # Get all backup files sorted by creation time (newest first)
-            backup_files = sorted(backup_path.glob("backup_*.db"),
-                                  key=lambda p: p.stat().st_mtime,
-                                  reverse=True)
+            backup_files = sorted(
+                backup_path.glob("backup_*.db"), 
+                key=lambda p: p.stat().st_mtime, 
+                reverse=True
+            )
 
             # Remove old backups beyond keep_count
             removed_count = 0
@@ -872,33 +849,19 @@ class SQLiteDatabase(DatabaseInterface):
         """Get current backup storage usage"""
         backup_path = Path(backup_dir)
         if not backup_path.exists():
-            return {
-                'total_files': 0,
-                'total_size_mb': 0,
-                'oldest_backup': None,
-                'newest_backup': None
-            }
+            return {'total_files': 0, 'total_size_mb': 0, 'oldest_backup': None, 'newest_backup': None}
 
         backup_files = list(backup_path.glob("backup_*.db"))
         total_size = sum(f.stat().st_size for f in backup_files)
 
         return {
-            'total_files':
-            len(backup_files),
-            'total_size_mb':
-            total_size / (1024 * 1024),
-            'oldest_backup':
-            min(backup_files, key=lambda f: f.stat().st_mtime)
-            if backup_files else None,
-            'newest_backup':
-            max(backup_files, key=lambda f: f.stat().st_mtime)
-            if backup_files else None,
+            'total_files': len(backup_files),
+            'total_size_mb': total_size / (1024 * 1024),
+            'oldest_backup': min(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
+            'newest_backup': max(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
         }
 
-
-# ============================================================================
 # Battle System and Template Manager
-# ============================================================================
 
 
 class BattleEngine:
@@ -1018,6 +981,7 @@ class BeastTemplateManager:
                         name=name,
                         rarity=BeastRarity(template_data['rarity']),
                         tendency=template_data['tendency'],
+                        location=template_data['location'],
                         base_hp_range=tuple(template_data['base_hp_range']),
                         base_attack_range=tuple(
                             template_data['base_attack_range']),
@@ -1031,21 +995,23 @@ class BeastTemplateManager:
             self._create_default_templates()
 
     def _create_default_templates(self):
-        """Create expanded beast templates with much more variety"""
-        expanded_beast_data = {
-            # COMMON BEASTS (★)
+        """Create default beast templates with expanded variety"""
+        default_data = {
+            # ★ COMMON BEASTS
             "Flood Dragonling": {
                 "rarity": 1,
                 "tendency": "n/a",
+                "location": "Fishing",
                 "base_hp_range": [80, 120],
                 "base_attack_range": [15, 25],
                 "description": "A young dragon with control over floods"
             },
 
-            # UNCOMMON BEASTS (★★)
+            # ★★ UNCOMMON BEASTS
             "Shenghuang": {
                 "rarity": 2,
                 "tendency": "n/a",
+                "location": "Hell Market",
                 "base_hp_range": [120, 180],
                 "base_attack_range": [25, 35],
                 "description": "A celestial phoenix of divine nature"
@@ -1053,476 +1019,541 @@ class BeastTemplateManager:
             "Pi Xiu": {
                 "rarity": 2,
                 "tendency": "n/a",
-                "base_hp_range": [110, 170],
-                "base_attack_range": [20, 30],
-                "description": "A mystical creature that brings wealth and fortune"
+                "location": "Hell Market",
+                "base_hp_range": [115, 175],
+                "base_attack_range": [22, 32],
+                "description": "A mystical creature that brings fortune"
             },
             "Chi Wen": {
                 "rarity": 2,
                 "tendency": "n/a",
-                "base_hp_range": [130, 190],
-                "base_attack_range": [28, 38],
-                "description": "A dragon son known for its love of water"
+                "location": "Heaven Sect Market",
+                "base_hp_range": [125, 185],
+                "base_attack_range": [26, 36],
+                "description": "A dragon son known for its water control"
             },
             "Bi'an": {
                 "rarity": 2,
                 "tendency": "n/a",
-                "base_hp_range": [125, 175],
+                "location": "Heaven Sect Market",
+                "base_hp_range": [118, 178],
                 "base_attack_range": [24, 34],
-                "description": "A righteous dragon son that judges fairly"
+                "description": "A righteous beast that judges good and evil"
             },
 
-            # RARE BEASTS (★★★)
+            # ★★★ RARE BEASTS
             "Red Phoenix": {
                 "rarity": 3,
                 "tendency": "Divine Ephor or Tai Bai +8%",
+                "location": "Hell Market",
                 "base_hp_range": [180, 250],
                 "base_attack_range": [35, 50],
-                "description": "A fiery phoenix of immense power"
+                "description": "A crimson phoenix burning with divine flames"
             },
             "Azure Phoenix": {
                 "rarity": 3,
                 "tendency": "Fu Xi or Yandi +8%",
-                "base_hp_range": [190, 260],
-                "base_attack_range": [38, 53],
-                "description": "A blue phoenix of ancient wisdom"
+                "location": "Monthly Event",
+                "base_hp_range": [185, 255],
+                "base_attack_range": [37, 52],
+                "description": "A blue phoenix with ancient wisdom"
             },
-            "Bai Ze": {
+            "Baize": {
                 "rarity": 3,
                 "tendency": "Dragon Princess or Princess Longji +8%",
-                "base_hp_range": [200, 270],
-                "base_attack_range": [40, 55],
-                "description": "A mystical beast of knowledge and prophecy"
+                "location": "Hell Market",
+                "base_hp_range": [175, 245],
+                "base_attack_range": [33, 48],
+                "description": "A wise beast that knows all creatures"
             },
-            "Xie Zhi": {
+            "Xiezhi": {
                 "rarity": 3,
                 "tendency": "Ne Zha, Yang Jian, or Xing Tian +8%",
-                "base_hp_range": [185, 255],
-                "base_attack_range": [36, 51],
-                "description": "A unicorn-like beast that detects truth and lies"
+                "location": "Monthly Event",
+                "base_hp_range": [190, 260],
+                "base_attack_range": [38, 53],
+                "description": "A unicorn-like beast of justice"
             },
-            "Nine Tails": {
+            "Ninetails": {
                 "rarity": 3,
                 "tendency": "Yao Ji, Da Ji, or Lord TongTian +8%",
-                "base_hp_range": [175, 245],
-                "base_attack_range": [42, 57],
-                "description": "A fox spirit with nine magnificent tails"
-            },
-            "Shen Pan": {
-                "rarity": 3,
-                "tendency": "n/a",
+                "location": "Spirit Jade Pavilion",
                 "base_hp_range": [195, 265],
-                "base_attack_range": [37, 52],
-                "description": "Divine judgment beast - starter choice"
+                "base_attack_range": [40, 55],
+                "description": "A mystical fox with nine tails"
             },
-            "Tian Hun": {
+            "Shenpa": {
                 "rarity": 3,
                 "tendency": "n/a",
-                "base_hp_range": [180, 250],
-                "base_attack_range": [39, 54],
-                "description": "Heavenly soul beast - starter choice"
+                "location": "Cultivator Starter",
+                "base_hp_range": [170, 240],
+                "base_attack_range": [32, 47],
+                "description": "A cultivator's first companion beast"
             },
-            "Bi Xin": {
+            "Tianhun": {
                 "rarity": 3,
                 "tendency": "n/a",
-                "base_hp_range": [185, 255],
-                "base_attack_range": [38, 53],
-                "description": "Heart protection beast - starter choice"
+                "location": "Cultivator Starter",
+                "base_hp_range": [178, 248],
+                "base_attack_range": [34, 49],
+                "description": "A spirit beast of the heavens"
+            },
+            "Bixin": {
+                "rarity": 3,
+                "tendency": "n/a",
+                "location": "Cultivator Starter",
+                "base_hp_range": [172, 242],
+                "base_attack_range": [33, 48],
+                "description": "A beast with a pure heart"
             },
             "Snow": {
                 "rarity": 3,
                 "tendency": "n/a",
-                "base_hp_range": [170, 240],
+                "location": "Cultivator Starter",
+                "base_hp_range": [180, 250],
                 "base_attack_range": [35, 50],
-                "description": "A beast of eternal winter - starter choice"
+                "description": "A frost beast of eternal winter"
             },
             "Shadow Monster": {
                 "rarity": 3,
                 "tendency": "n/a",
-                "base_hp_range": [180, 250],
-                "base_attack_range": [35, 50],
+                "location": "Tales of Demons&Gods Event",
+                "base_hp_range": [188, 258],
+                "base_attack_range": [37, 52],
                 "description": "A creature born from pure shadow"
             },
             "Cyan Phoenix": {
                 "rarity": 3,
                 "tendency": "n/a",
+                "location": "Tales of Demons&Gods Event",
                 "base_hp_range": [185, 255],
-                "base_attack_range": [37, 52],
-                "description": "A phoenix of cyan flames and mystery"
+                "base_attack_range": [36, 51],
+                "description": "A cyan-feathered phoenix of legends"
             },
 
-            # EPIC BEASTS (★★★★)
+            # ★★★★ EPIC BEASTS
             "Kyrin": {
                 "rarity": 4,
                 "tendency": "Eastern Immortal +12%",
+                "location": "Spirit Jade Pavilion",
                 "base_hp_range": [300, 450],
                 "base_attack_range": [60, 90],
-                "description": "A majestic unicorn of the eastern realms"
+                "description": "A majestic unicorn from the eastern realms"
             },
             "Azure Dragon": {
                 "rarity": 4,
                 "tendency": "Primordial Land +12%",
+                "location": "Hell Market",
                 "base_hp_range": [320, 470],
                 "base_attack_range": [65, 95],
                 "description": "A mighty dragon of the eastern skies"
             },
-            "Jiu Ying": {
+            "Jiuying": {
                 "rarity": 4,
                 "tendency": "Skyshine Continent +12%",
+                "location": "Hell Market",
                 "base_hp_range": [310, 460],
                 "base_attack_range": [62, 92],
-                "description": "A nine-headed serpent of ancient power"
+                "description": "A nine-headed water serpent"
             },
-            "Zhu Yan": {
+            "ZhuYan": {
                 "rarity": 4,
                 "tendency": "Deification Domain +12%",
-                "base_hp_range": [330, 480],
-                "base_attack_range": [68, 98],
-                "description": "A fire ape that brings war and conflict"
+                "location": "Void Treasure Quintessence",
+                "base_hp_range": [305, 455],
+                "base_attack_range": [61, 91],
+                "description": "A fire ape that brings war"
             },
             "Hell Steed": {
                 "rarity": 4,
                 "tendency": "Heaven Palace +12%",
-                "base_hp_range": [340, 490],
-                "base_attack_range": [70, 100],
+                "location": "Treasure Shop",
+                "base_hp_range": [315, 465],
+                "base_attack_range": [63, 93],
                 "description": "A demonic horse from the underworld"
             },
             "Yuan Chu": {
                 "rarity": 4,
                 "tendency": "Heaven Palace +12%",
-                "base_hp_range": [350, 500],
-                "base_attack_range": [72, 102],
-                "description": "The primordial beginning beast"
+                "location": "Treasure Shop",
+                "base_hp_range": [318, 468],
+                "base_attack_range": [64, 94],
+                "description": "A primordial beast of creation"
             },
             "Jue Ru": {
                 "rarity": 4,
                 "tendency": "Luo Shen, Shi Ji, Xi He, or Queen Mother +12%",
-                "base_hp_range": [325, 475],
-                "base_attack_range": [67, 97],
-                "description": "A beast of absolute determination"
+                "location": "Treasure Shop",
+                "base_hp_range": [312, 462],
+                "base_attack_range": [62, 92],
+                "description": "A beast of absolute power"
             },
             "Monster Nian": {
                 "rarity": 4,
                 "tendency": "Deification Domain +12%",
-                "base_hp_range": [315, 465],
-                "base_attack_range": [63, 93],
-                "description": "The legendary New Year monster"
+                "location": "New Year Event",
+                "base_hp_range": [325, 475],
+                "base_attack_range": [65, 95],
+                "description": "The legendary beast of the new year"
             },
-            "Love Bird": {
+            "LoveBird": {
                 "rarity": 4,
                 "tendency": "Skyshine Continent +12%",
-                "base_hp_range": [290, 440],
-                "base_attack_range": [58, 88],
+                "location": "Valentine's Day Event",
+                "base_hp_range": [300, 450],
+                "base_attack_range": [60, 90],
                 "description": "A pair of birds representing eternal love"
             },
             "Phoenix": {
                 "rarity": 4,
                 "tendency": "Primordial Land +12%",
-                "base_hp_range": [345, 495],
-                "base_attack_range": [71, 101],
-                "description": "The immortal fire bird of rebirth"
+                "location": "Women's Day Event",
+                "base_hp_range": [330, 480],
+                "base_attack_range": [66, 96],
+                "description": "The legendary bird of rebirth"
             },
-            "Qing Yuan": {
+            "QingYuan": {
                 "rarity": 4,
                 "tendency": "Eastern Immortal +12%",
-                "base_hp_range": [335, 485],
-                "base_attack_range": [69, 99],
-                "description": "A beast of pure celestial energy"
+                "location": "Event",
+                "base_hp_range": [308, 458],
+                "base_attack_range": [62, 92],
+                "description": "A beast from the eastern immortal realm"
             },
             "Devour": {
                 "rarity": 4,
                 "tendency": "Deification Domain +12%",
-                "base_hp_range": [360, 510],
-                "base_attack_range": [74, 104],
+                "location": "Monthly Event",
+                "base_hp_range": [322, 472],
+                "base_attack_range": [64, 94],
                 "description": "A beast that devours all in its path"
             },
             "Thunder": {
                 "rarity": 4,
                 "tendency": "Skyshine Continent +12%",
-                "base_hp_range": [305, 455],
-                "base_attack_range": [61, 91],
-                "description": "A beast born from lightning and storms"
+                "location": "Thunder Valley",
+                "base_hp_range": [315, 465],
+                "base_attack_range": [63, 93],
+                "description": "A beast embodying the power of thunder"
             },
             "Fly Dragon": {
                 "rarity": 4,
                 "tendency": "Primordial Land +12%",
+                "location": "Sky Realm",
                 "base_hp_range": [320, 470],
-                "base_attack_range": [65, 95],
+                "base_attack_range": [64, 94],
                 "description": "A dragon that soars through the heavens"
             },
             "Koi": {
                 "rarity": 4,
                 "tendency": "Eastern Immortal +12%",
-                "base_hp_range": [280, 430],
-                "base_attack_range": [56, 86],
-                "description": "A carp that transforms into a dragon"
+                "location": "Celestial Pond",
+                "base_hp_range": [310, 460],
+                "base_attack_range": [62, 92],
+                "description": "A sacred fish that brings good fortune"
             },
             "Picapica": {
                 "rarity": 4,
                 "tendency": "Deification Domain +12%",
-                "base_hp_range": [295, 445],
-                "base_attack_range": [59, 89],
-                "description": "A mysterious beast of unknown origin"
+                "location": "Divine Forest",
+                "base_hp_range": [305, 455],
+                "base_attack_range": [61, 91],
+                "description": "A small but mighty divine creature"
             },
             "Greenbull": {
                 "rarity": 4,
                 "tendency": "Skyshine Continent +12%",
-                "base_hp_range": [370, 520],
-                "base_attack_range": [76, 106],
-                "description": "A powerful bull with emerald hide"
+                "location": "Emerald Plains",
+                "base_hp_range": [335, 485],
+                "base_attack_range": [67, 97],
+                "description": "A powerful bull with emerald horns"
             },
             "Jade Rabbit": {
                 "rarity": 4,
                 "tendency": "Eastern Immortal +12%",
-                "base_hp_range": [270, 420],
-                "base_attack_range": [54, 84],
-                "description": "The moon goddess's faithful companion"
+                "location": "Moon Palace",
+                "base_hp_range": [300, 450],
+                "base_attack_range": [60, 90],
+                "description": "The moon goddess's companion"
             },
             "Dragon Horse": {
                 "rarity": 4,
                 "tendency": "Deification Domain +12%",
-                "base_hp_range": [355, 505],
-                "base_attack_range": [73, 103],
-                "description": "A horse with the soul of a dragon"
+                "location": "Divine Stables",
+                "base_hp_range": [318, 468],
+                "base_attack_range": [64, 94],
+                "description": "A mystical horse with dragon heritage"
             },
             "Black Kyrin": {
                 "rarity": 4,
                 "tendency": "Primordial Land +12%",
-                "base_hp_range": [340, 490],
-                "base_attack_range": [70, 100],
+                "location": "Shadow Realm",
+                "base_hp_range": [325, 475],
+                "base_attack_range": [65, 95],
                 "description": "A dark unicorn of immense power"
             },
             "Reindeer": {
                 "rarity": 4,
                 "tendency": "Skyshine Continent +12%",
-                "base_hp_range": [285, 435],
-                "base_attack_range": [57, 87],
-                "description": "A magical reindeer from the frozen peaks"
+                "location": "Frozen Tundra",
+                "base_hp_range": [310, 460],
+                "base_attack_range": [62, 92],
+                "description": "A magical reindeer from the north"
             },
             "Panda": {
                 "rarity": 4,
                 "tendency": "Primordial Land +12%",
-                "base_hp_range": [365, 515],
-                "base_attack_range": [75, 105],
-                "description": "A gentle giant with hidden strength"
+                "location": "Bamboo Grove",
+                "base_hp_range": [330, 480],
+                "base_attack_range": [66, 96],
+                "description": "A gentle but powerful bear"
             },
             "Shadow Lord": {
                 "rarity": 4,
                 "tendency": "Skyshine Continent +12%",
-                "base_hp_range": [350, 500],
-                "base_attack_range": [72, 102],
-                "description": "Master of shadows and darkness"
+                "location": "Tales of Demons&Gods Event",
+                "base_hp_range": [340, 490],
+                "base_attack_range": [68, 98],
+                "description": "Lord of all shadows and darkness"
             },
             "Elephant": {
                 "rarity": 4,
                 "tendency": "Deification Domain +12%",
-                "base_hp_range": [380, 530],
-                "base_attack_range": [78, 108],
-                "description": "A colossal elephant of divine wisdom"
+                "location": "Sacred Grove",
+                "base_hp_range": [350, 500],
+                "base_attack_range": [70, 100],
+                "description": "A wise and powerful elephant"
             },
             "Sky Phoenix": {
                 "rarity": 4,
                 "tendency": "Eastern Immortal +12%",
-                "base_hp_range": [330, 480],
-                "base_attack_range": [68, 98],
-                "description": "A phoenix that rules the celestial skies"
+                "location": "Tales of Demons&Gods Event",
+                "base_hp_range": [335, 485],
+                "base_attack_range": [67, 97],
+                "description": "A phoenix that rules the skies"
             },
 
-            # LEGENDARY BEASTS (★★★★★)
+            # ★★★★★ LEGENDARY BEASTS
             "Heavenly Kun": {
                 "rarity": 5,
                 "tendency": "Luo Shen, Shi Ji, Xi He, or Queen Mother +15%",
+                "location": "Event",
                 "base_hp_range": [500, 700],
                 "base_attack_range": [100, 140],
-                "description": "A massive fish that transforms into a bird"
+                "description": "A colossal fish from the heavenly seas"
             },
             "Nine-Hell Steed": {
                 "rarity": 5,
                 "tendency": "Heaven Palace +15%",
+                "location": "Treasure Shop",
                 "base_hp_range": [520, 720],
-                "base_attack_range": [105, 145],
+                "base_attack_range": [104, 144],
                 "description": "A demonic horse from the nine hells"
             },
             "Tien Yuanchu": {
                 "rarity": 5,
                 "tendency": "Heaven Palace +15%",
-                "base_hp_range": [540, 740],
-                "base_attack_range": [110, 150],
-                "description": "The celestial primordial beginning"
+                "location": "Treasure Shop",
+                "base_hp_range": [510, 710],
+                "base_attack_range": [102, 142],
+                "description": "The primordial beast of heaven"
             },
             "Snowy Jue Ru": {
                 "rarity": 5,
                 "tendency": "Luo Shen, Shi Ji, Xi He, or Queen Mother +15%",
-                "base_hp_range": [510, 710],
-                "base_attack_range": [102, 142],
-                "description": "A winter variant of absolute determination"
+                "location": "Christmas Event",
+                "base_hp_range": [495, 695],
+                "base_attack_range": [99, 139],
+                "description": "A frost-covered beast of absolute power"
             },
             "Immortal Eater": {
                 "rarity": 5,
                 "tendency": "Deification Domain +15%",
-                "base_hp_range": [580, 780],
-                "base_attack_range": [118, 158],
-                "description": "A terrifying beast that devours immortals"
+                "location": "Treasure Shop",
+                "base_hp_range": [530, 730],
+                "base_attack_range": [106, 146],
+                "description": "A fearsome beast that devours immortals"
             },
-            "Queen Bird": {
+            "QueenBird": {
                 "rarity": 5,
                 "tendency": "Skyshine Continent +15%",
-                "base_hp_range": [480, 680],
-                "base_attack_range": [96, 136],
-                "description": "The sovereign of all winged creatures"
+                "location": "Valentine's Day Event",
+                "base_hp_range": [505, 705],
+                "base_attack_range": [101, 141],
+                "description": "The sovereign of all flying creatures"
             },
             "Deity Phoenix": {
                 "rarity": 5,
                 "tendency": "Primordial Land +15%",
-                "base_hp_range": [560, 760],
-                "base_attack_range": [115, 155],
-                "description": "A phoenix that has achieved godhood"
+                "location": "Women's Day Event",
+                "base_hp_range": [525, 725],
+                "base_attack_range": [105, 145],
+                "description": "A phoenix elevated to deity status"
             },
-            "Deity Qing Yuan": {
+            "Deity QingYuan": {
                 "rarity": 5,
                 "tendency": "Eastern Immortal +15%",
-                "base_hp_range": [530, 730],
-                "base_attack_range": [108, 148],
-                "description": "A divine beast of pure celestial essence"
+                "location": "Event",
+                "base_hp_range": [515, 715],
+                "base_attack_range": [103, 143],
+                "description": "A deified beast from the eastern realm"
             },
             "Dark Devourer": {
                 "rarity": 5,
                 "tendency": "Deification Domain +15%",
-                "base_hp_range": [570, 770],
-                "base_attack_range": [116, 156],
-                "description": "A dark entity that consumes all light"
+                "location": "Monthly Event",
+                "base_hp_range": [535, 735],
+                "base_attack_range": [107, 147],
+                "description": "A creature that consumes darkness itself"
             },
             "Purple Thunder": {
                 "rarity": 5,
                 "tendency": "Skyshine Continent +15%",
-                "base_hp_range": [490, 690],
-                "base_attack_range": [98, 138],
-                "description": "A beast of purple lightning and storms"
+                "location": "Storm Peak",
+                "base_hp_range": [520, 720],
+                "base_attack_range": [104, 144],
+                "description": "A beast wreathed in purple lightning"
             },
             "Lucky Fly Dragon": {
                 "rarity": 5,
                 "tendency": "Primordial Land +15%",
-                "base_hp_range": [520, 720],
-                "base_attack_range": [105, 145],
-                "description": "A fortune-bringing celestial dragon"
+                "location": "Fortune Valley",
+                "base_hp_range": [515, 715],
+                "base_attack_range": [103, 143],
+                "description": "A dragon that brings incredible luck"
             },
             "King Koi": {
                 "rarity": 5,
                 "tendency": "Eastern Immortal +15%",
-                "base_hp_range": [470, 670],
-                "base_attack_range": [94, 134],
-                "description": "The emperor of all carp"
+                "location": "Royal Pond",
+                "base_hp_range": [500, 700],
+                "base_attack_range": [100, 140],
+                "description": "The king of all koi fish"
             },
             "Star Picapica": {
                 "rarity": 5,
                 "tendency": "Deification Domain +15%",
-                "base_hp_range": [485, 685],
-                "base_attack_range": [97, 137],
-                "description": "A stellar variant of the mysterious beast"
+                "location": "Stellar Grove",
+                "base_hp_range": [510, 710],
+                "base_attack_range": [102, 142],
+                "description": "A star-blessed divine creature"
             },
             "Qing Greenbull": {
                 "rarity": 5,
                 "tendency": "Skyshine Continent +15%",
-                "base_hp_range": [590, 790],
-                "base_attack_range": [120, 160],
+                "location": "Mystic Forest",
+                "base_hp_range": [545, 745],
+                "base_attack_range": [109, 149],
                 "description": "A legendary bull with emerald horns"
             },
             "Moon Rabbit": {
                 "rarity": 5,
                 "tendency": "Eastern Immortal +15%",
-                "base_hp_range": [460, 660],
-                "base_attack_range": [92, 132],
-                "description": "A rabbit blessed by the moon goddess"
+                "location": "Lunar Palace",
+                "base_hp_range": [495, 695],
+                "base_attack_range": [99, 139],
+                "description": "The moon's eternal guardian"
             },
             "Buddha Dragon Horse": {
                 "rarity": 5,
                 "tendency": "Deification Domain +15%",
-                "base_hp_range": [550, 750],
-                "base_attack_range": [112, 152],
-                "description": "A horse-dragon blessed by Buddha"
+                "location": "Sacred Temple",
+                "base_hp_range": [525, 725],
+                "base_attack_range": [105, 145],
+                "description": "A horse blessed by Buddha himself"
             },
             "Snowy Reindeer": {
                 "rarity": 5,
                 "tendency": "Skyshine Continent +15%",
-                "base_hp_range": [475, 675],
-                "base_attack_range": [95, 135],
-                "description": "A reindeer from the eternal winter"
+                "location": "Winter Event",
+                "base_hp_range": [505, 705],
+                "base_attack_range": [101, 141],
+                "description": "A magical reindeer from eternal winter"
             },
             "Might Panda": {
                 "rarity": 5,
                 "tendency": "Primordial Land +15%",
-                "base_hp_range": [580, 780],
-                "base_attack_range": [118, 158],
-                "description": "A panda with overwhelming strength"
+                "location": "Ancient Grove",
+                "base_hp_range": [540, 740],
+                "base_attack_range": [108, 148],
+                "description": "A panda of incredible strength"
             },
             "Shadow Immortal": {
                 "rarity": 5,
                 "tendency": "Skyshine Continent +15%",
-                "base_hp_range": [535, 735],
-                "base_attack_range": [109, 149],
-                "description": "An immortal master of shadows"
+                "location": "Tales of Demons&Gods Event",
+                "base_hp_range": [530, 730],
+                "base_attack_range": [106, 146],
+                "description": "An immortal being born from shadows"
             },
             "Immortal Elephant": {
                 "rarity": 5,
                 "tendency": "Deification Domain +15%",
-                "base_hp_range": [600, 800],
-                "base_attack_range": [122, 162],
+                "location": "Divine Sanctuary",
+                "base_hp_range": [550, 750],
+                "base_attack_range": [110, 150],
                 "description": "An elephant that achieved immortality"
             },
-            "Heavenly Phoenix": {
+            "Heaventy Phoenix": {
                 "rarity": 5,
                 "tendency": "Eastern Immortal +15%",
-                "base_hp_range": [545, 745],
-                "base_attack_range": [111, 151],
-                "description": "A phoenix from the highest heavens"
+                "location": "Tales of Demons&Gods Event",
+                "base_hp_range": [535, 735],
+                "base_attack_range": [107, 147],
+                "description": "A phoenix blessed by the heavens"
             },
 
-            # MYTHIC BEASTS (★★★★★★)
+            # ★★★★★★ MYTHIC BEASTS
             "Yinglong": {
                 "rarity": 6,
-                "tendency": "LeiZu, Xianle, or Taiyuan +18%",
+                "tendency": "Leizu, Xianle, or Taiyuan +18%",
+                "location": "Mythical Realm",
                 "base_hp_range": [800, 1200],
                 "base_attack_range": [150, 200],
                 "description": "A legendary winged dragon of immense power"
             },
             "River God": {
                 "rarity": 6,
-                "tendency": "LeiZu, Xianle, or Taiyuan +18%",
-                "base_hp_range": [750, 1150],
-                "base_attack_range": [145, 195],
-                "description": "A divine being that controls all rivers"
+                "tendency": "Leizu, Xianle, or Taiyuan +18%",
+                "location": "Sacred River",
+                "base_hp_range": [820, 1220],
+                "base_attack_range": [155, 205],
+                "description": "The divine ruler of all rivers and streams"
             },
             "Immortal Panda": {
                 "rarity": 6,
                 "tendency": "Primordial Land +18%",
+                "location": "Spring Festival Event",
                 "base_hp_range": [850, 1250],
                 "base_attack_range": [160, 210],
                 "description": "A panda that transcended mortality"
             },
             "Dragon Ancestor": {
                 "rarity": 6,
-                "tendency": "LeiZu, Xianle, or Taiyuan +20%",
+                "tendency": "Leizu, Xianle, or Taiyuan +20%",
+                "location": "Primordial Void",
                 "base_hp_range": [900, 1300],
                 "base_attack_range": [170, 220],
-                "description": "The progenitor of all dragons"
+                "description": "The first dragon, ancestor of all dragonkind"
             },
             "Dragon Chi Wen": {
                 "rarity": 6,
                 "tendency": "Skyshine Continent +17%",
-                "base_hp_range": [820, 1220],
-                "base_attack_range": [155, 205],
-                "description": "The ultimate evolution of Chi Wen"
+                "location": "Operation Events",
+                "base_hp_range": [830, 1230],
+                "base_attack_range": [157, 207],
+                "description": "The most powerful of the dragon sons"
             }
         }
 
         try:
             with open(self.data_file, 'w', encoding='utf-8') as f:
-                yaml.dump(expanded_beast_data, f, default_flow_style=False)
-            logging.info(f"Created expanded beast templates with {len(expanded_beast_data)} beasts in {self.data_file}")
+                yaml.dump(default_data, f, default_flow_style=False)
+            logging.info(f"Created expanded beast templates in {self.data_file}")
             # Load the templates we just created
             self._load_templates()
         except Exception as e:
-            logging.error(f"Failed to create expanded templates: {e}")
+            logging.error(f"Failed to create default templates: {e}")
 
     def get_random_template_by_rarity(
             self, rarity: BeastRarity) -> Optional[BeastTemplate]:
@@ -1543,11 +1574,11 @@ class BeastTemplateManager:
 
         if rarity_weights is None:
             rarity_weights = {
-                BeastRarity.COMMON: 41,
-                BeastRarity.UNCOMMON: 38,
-                BeastRarity.RARE: 15,
-                BeastRarity.EPIC: 5,
-                BeastRarity.LEGENDARY: 1
+                BeastRarity.COMMON: 35,
+                BeastRarity.UNCOMMON: 30,
+                BeastRarity.RARE: 20,
+                BeastRarity.EPIC: 12,
+                BeastRarity.LEGENDARY: 3
             }
 
         available_templates = []
@@ -1657,11 +1688,7 @@ async def select_beast_for_battle(
         await message.delete()
         return None
 
-
-# ============================================================================
 # Main Bot Class
-# ============================================================================
-
 
 class ImmortalBeastsBot(commands.Bot):
     """Main bot class"""
@@ -1694,14 +1721,11 @@ class ImmortalBeastsBot(commands.Bot):
         self.logger.info("Database initialized")
 
         # Update backup task interval based on config
-        self.backup_task.change_interval(
-            hours=self.config.backup_interval_hours)
+        self.backup_task.change_interval(hours=self.config.backup_interval_hours)
 
         if self.config.backup_enabled:
             self.backup_task.start()
-            self.logger.info(
-                f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})"
-            )
+            self.logger.info(f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})")
         else:
             self.logger.info("Backup task disabled")
 
@@ -1844,16 +1868,12 @@ class ImmortalBeastsBot(commands.Bot):
             storage_info = self.db.get_storage_usage()
 
             if storage_info['total_size_mb'] > self.config.backup_max_size_mb:
-                self.logger.warning(
-                    f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB"
-                )
+                self.logger.warning(f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB")
                 # Force additional cleanup
-                await self.db._cleanup_old_backups(
-                    Path("backups"), self.config.backup_retention_count // 2)
+                await self.db._cleanup_old_backups(Path("backups"), self.config.backup_retention_count // 2)
 
             # Create new backup with retention
-            backup_file = await self.db.backup_database(
-                keep_count=self.config.backup_retention_count)
+            backup_file = await self.db.backup_database(keep_count=self.config.backup_retention_count)
 
             if backup_file:
                 self.logger.info(f"Backup completed: {backup_file}")
@@ -1861,22 +1881,44 @@ class ImmortalBeastsBot(commands.Bot):
         except Exception as e:
             self.logger.error(f"Backup task failed: {e}")
 
-    @tasks.loop(minutes=30)
+    # Replace your existing spawn_task with this improved version
+
+    @tasks.loop(minutes=1)  # Check every minute for more responsive timing
     async def spawn_task(self):
-        """Regular beast spawning"""
+        """Improved beast spawning with proper timing and logging"""
         try:
             if not self.spawn_channels:
+                self.logger.debug("No spawn channels configured")
                 return
 
-            wait_time = random.randint(self.config.spawn_interval_min * 60,
-                                       self.config.spawn_interval_max * 60)
-            await asyncio.sleep(wait_time)
+            # Check if it's time to spawn (using instance variable to track timing)
+            if not hasattr(self, '_next_spawn_time'):
+                # Initialize with random time between min and max interval
+                wait_minutes = random.randint(self.config.spawn_interval_min, self.config.spawn_interval_max)
+                self._next_spawn_time = datetime.datetime.now() + datetime.timedelta(minutes=wait_minutes)
+                self.logger.info(f"Next beast spawn scheduled in {wait_minutes} minutes")
+                return
 
+            # Check if it's time to spawn
+            if datetime.datetime.now() < self._next_spawn_time:
+                return  # Not time yet
+
+            # Time to spawn!
             channel_id = random.choice(list(self.spawn_channels.keys()))
             channel = self.get_channel(channel_id)
 
             if channel:
                 await self.spawn_beast(channel)
+                self.logger.info(f"Beast spawned in channel: {channel.name} ({channel_id})")
+
+                # Schedule next spawn
+                wait_minutes = random.randint(self.config.spawn_interval_min, self.config.spawn_interval_max)
+                self._next_spawn_time = datetime.datetime.now() + datetime.timedelta(minutes=wait_minutes)
+                self.logger.info(f"Next beast spawn scheduled in {wait_minutes} minutes")
+            else:
+                self.logger.warning(f"Spawn channel {channel_id} not found, removing from spawn channels")
+                del self.spawn_channels[channel_id]
+
         except Exception as e:
             self.logger.error(f"Spawn task failed: {e}")
 
@@ -1885,11 +1927,11 @@ class ImmortalBeastsBot(commands.Bot):
         try:
             rarity_weights = {
                 BeastRarity.COMMON: 50,
-                BeastRarity.UNCOMMON: 25,
-                BeastRarity.RARE: 15,
+                BeastRarity.UNCOMMON: 26,
+                BeastRarity.RARE: 16,
                 BeastRarity.EPIC: 7,
-                BeastRarity.LEGENDARY: 2.5,
-                BeastRarity.MYTHIC: 0.5
+                BeastRarity.LEGENDARY: 1,
+                BeastRarity.MYTHIC: 0.1
             }
 
             template = self.template_manager.get_random_template_up_to_rarity(
@@ -1912,6 +1954,9 @@ class ImmortalBeastsBot(commands.Bot):
             embed.add_field(name="Tendency",
                             value=beast.tendency or "None",
                             inline=False)
+            embed.add_field(name="Location",
+                            value=beast.location or "Unknown",
+                            inline=False)
 
             if beast.description:
                 embed.add_field(name="Description",
@@ -1932,11 +1977,7 @@ class ImmortalBeastsBot(commands.Bot):
         except Exception as e:
             self.logger.error(f"Error spawning beast: {e}")
 
-
-# ============================================================================
 # Commands
-# ============================================================================
-
 
 @commands.command(name='stone')
 async def daily_stone_reward(ctx):
@@ -1984,6 +2025,122 @@ async def daily_stone_reward(ctx):
     embed.set_footer(text="Come back tomorrow for another 100 beast stones!")
     await ctx.send(embed=embed)
 
+# SPAWN MANAGEMENT COMMANDS - ADD THESE TO YOUR COMMANDS SECTION
+
+@commands.command(name='forcespawn')
+@commands.has_permissions(administrator=True)
+async def force_spawn(ctx):
+    """Manually force a beast to spawn (admin only)"""
+    if ctx.channel.id not in ctx.bot.spawn_channels:
+        embed = discord.Embed(
+            title="❌ Not a Spawn Channel",
+            description="This channel is not set up for beast spawning.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        await ctx.bot.spawn_beast(ctx.channel)
+        embed = discord.Embed(
+            title="✅ Beast Force Spawned",
+            description="A wild beast has been manually spawned!",
+            color=0x00FF00)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Spawn Failed",
+            description=f"Failed to spawn beast: {str(e)}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+
+
+@commands.command(name='spawninfo')
+@commands.has_permissions(administrator=True)
+async def spawn_info(ctx):
+    """Show spawn system information (admin only)"""
+    embed = discord.Embed(
+        title="📊 Beast Spawn Information",
+        color=0x00AAFF)
+
+    # Spawn channels
+    if ctx.bot.spawn_channels:
+        channel_list = []
+        for channel_id in ctx.bot.spawn_channels.keys():
+            channel = ctx.bot.get_channel(channel_id)
+            if channel:
+                channel_list.append(f"#{channel.name}")
+            else:
+                channel_list.append(f"Unknown ({channel_id})")
+        embed.add_field(name="🎯 Spawn Channels", 
+                       value="\n".join(channel_list) if channel_list else "None", 
+                       inline=False)
+    else:
+        embed.add_field(name="🎯 Spawn Channels", value="None configured", inline=False)
+
+    # Timing info
+    embed.add_field(name="⏰ Spawn Interval", 
+                   value=f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} minutes", 
+                   inline=True)
+
+    # Next spawn time
+    if hasattr(ctx.bot, '_next_spawn_time'):
+        time_until_spawn = ctx.bot._next_spawn_time - datetime.datetime.now()
+        minutes_left = int(time_until_spawn.total_seconds() / 60)
+        if minutes_left > 0:
+            embed.add_field(name="⏱️ Next Spawn", value=f"In {minutes_left} minutes", inline=True)
+        else:
+            embed.add_field(name="⏱️ Next Spawn", value="Due now!", inline=True)
+    else:
+        embed.add_field(name="⏱️ Next Spawn", value="Not scheduled", inline=True)
+
+    # Current spawned beasts
+    active_spawns = []
+    for channel_id, beast in ctx.bot.spawn_channels.items():
+        if beast:  # There's a beast waiting to be caught
+            channel = ctx.bot.get_channel(channel_id)
+            if channel:
+                active_spawns.append(f"#{channel.name}: {beast.name} {beast.rarity.emoji}")
+
+    embed.add_field(name="🐉 Active Wild Beasts", 
+                   value="\n".join(active_spawns) if active_spawns else "None", 
+                   inline=False)
+
+    await ctx.send(embed=embed)
+
+
+@commands.command(name='nextspawn')
+async def next_spawn_time(ctx):
+    """Check when the next beast will spawn"""
+    if not hasattr(ctx.bot, '_next_spawn_time'):
+        embed = discord.Embed(
+            title="⏰ Next Beast Spawn",
+            description="Spawn timing not initialized yet. Please wait a moment.",
+            color=0xFFAA00)
+        await ctx.send(embed=embed)
+        return
+
+    time_until_spawn = ctx.bot._next_spawn_time - datetime.datetime.now()
+    minutes_left = int(time_until_spawn.total_seconds() / 60)
+
+    if minutes_left <= 0:
+        embed = discord.Embed(
+            title="🎯 Next Beast Spawn",
+            description="A beast should spawn very soon!",
+            color=0x00FF00)
+    else:
+        embed = discord.Embed(
+            title="⏰ Next Beast Spawn",
+            description=f"Next wild beast will spawn in approximately **{minutes_left} minutes**",
+            color=0x00AAFF)
+
+        embed.add_field(name="📍 Spawn Locations", 
+                       value=f"{len(ctx.bot.spawn_channels)} channels configured", 
+                       inline=True)
+        embed.add_field(name="🎲 Spawn Range", 
+                       value=f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} min", 
+                       inline=True)
+
+    await ctx.send(embed=embed)
 
 @commands.command(name='adopt')
 async def adopt_beast(ctx):
@@ -2090,7 +2247,7 @@ async def show_beasts(ctx, page: int = 1):
             f"{active_indicator}#{beast_id} {beast.name} {beast.rarity.emoji}",
             value=
             f"Level {beast.stats.level} | HP: {beast.stats.hp}/{beast.stats.max_hp}\n"
-            f"Power: {beast.power_level}" + (f" | {beast.tendency}" if beast.tendency != "n/a" else ""),
+            f"Power: {beast.power_level} | Location: {beast.location}",
             inline=False)
 
     embed.set_footer(
@@ -2197,15 +2354,11 @@ async def beast_info(ctx, beast_id: int):
         f"**Speed:** {target_beast.stats.speed}",
         inline=True)
 
-    # Tendency only
-    if target_beast.tendency != "n/a":
-        embed.add_field(name="🌟 Tendency",
-                        value=target_beast.tendency,
-                        inline=True)
-    else:
-        embed.add_field(name="🌟 Tendency",
-                        value="None",
-                        inline=True)
+    # Location and tendency
+    embed.add_field(name="🌍 Origin",
+                    value=f"**Location:** {target_beast.location}\n"
+                    f"**Tendency:** {target_beast.tendency}",
+                    inline=True)
 
     # Caught date
     caught_date = target_beast.caught_at.strftime("%Y-%m-%d %H:%M")
@@ -2289,6 +2442,200 @@ async def show_balance(ctx):
         value=
         f"Total Catches: {user.total_catches}\nBattles: {user.total_battles}\nWin Rate: {user.win_rate:.1f}%",
         inline=True)
+
+    await ctx.send(embed=embed)
+
+# Add this new heal command to your commands section
+
+@commands.command(name='heal')
+async def heal_beast(ctx, beast_id: int):
+    """Heal a beast to full HP for 50 beast stones"""
+    HEAL_COST = 50
+
+    # Get user data
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    # Check if user has enough beast stones
+    if user.spirit_stones < HEAL_COST:
+        embed = discord.Embed(
+            title="❌ Insufficient Beast Stones",
+            description=f"You need **{HEAL_COST} beast stones** to heal a beast!\n"
+                       f"You currently have **{user.spirit_stones} stones**.\n"
+                       f"Use `{ctx.bot.config.prefix}stone` to get daily stones.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Get user's beasts
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+
+    # Find the target beast
+    target_beast = None
+    target_beast_id = None
+    for bid, beast in user_beasts:
+        if bid == beast_id:
+            target_beast = beast
+            target_beast_id = bid
+            break
+
+    if not target_beast:
+        embed = discord.Embed(
+            title="❌ Beast Not Found",
+            description=f"You don't own a beast with ID #{beast_id}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Check if beast is already at full HP
+    if target_beast.stats.hp >= target_beast.stats.max_hp:
+        embed = discord.Embed(
+            title="💚 Beast Already Healthy",
+            description=f"**{target_beast.name}** is already at full HP!\n"
+                       f"HP: {target_beast.stats.hp}/{target_beast.stats.max_hp}",
+            color=0x00FF00)
+        embed.add_field(name="💰 Beast Stones", 
+                       value=f"No stones spent: {user.spirit_stones}", 
+                       inline=True)
+        await ctx.send(embed=embed)
+        return
+
+    # Calculate healing amount
+    old_hp = target_beast.stats.hp
+    healing_amount = target_beast.stats.heal()  # Heal to full HP
+
+    # Deduct beast stones
+    user.spirit_stones -= HEAL_COST
+
+    # Update database
+    await ctx.bot.db.update_user(user)
+    await ctx.bot.db.update_beast(target_beast_id, target_beast)
+
+    # Create success embed
+    embed = discord.Embed(
+        title="✨ Beast Healed!",
+        description=f"**{target_beast.name}** has been fully healed!\n{target_beast.rarity.emoji}",
+        color=target_beast.rarity.color)
+
+    embed.add_field(name="🐉 Beast Info", 
+                   value=f"**Name:** {target_beast.name}\n"
+                         f"**ID:** #{beast_id}\n"
+                         f"**Level:** {target_beast.stats.level}",
+                   inline=True)
+
+    embed.add_field(name="❤️ HP Restored", 
+                   value=f"**Before:** {old_hp}/{target_beast.stats.max_hp}\n"
+                         f"**After:** {target_beast.stats.hp}/{target_beast.stats.max_hp}\n"
+                         f"**Healed:** +{healing_amount} HP",
+                   inline=True)
+
+    embed.add_field(name="💰 Cost", 
+                   value=f"**Spent:** {HEAL_COST} stones\n"
+                         f"**Remaining:** {user.spirit_stones} stones",
+                   inline=True)
+
+    embed.set_footer(text=f"Use {ctx.bot.config.prefix}beast {beast_id} to view full beast details")
+    await ctx.send(embed=embed)
+
+
+# Also add this enhanced heal_all command as a bonus feature
+
+@commands.command(name='healall')
+async def heal_all_beasts(ctx):
+    """Heal ALL your beasts to full HP (costs 50 stones per damaged beast)"""
+    HEAL_COST = 50
+
+    # Get user data
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+
+    if not user_beasts:
+        embed = discord.Embed(
+            title="📦 No Beasts",
+            description="You don't have any beasts to heal!",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Find damaged beasts
+    damaged_beasts = []
+    for beast_id, beast in user_beasts:
+        if beast.stats.hp < beast.stats.max_hp:
+            damaged_beasts.append((beast_id, beast))
+
+    if not damaged_beasts:
+        embed = discord.Embed(
+            title="💚 All Beasts Healthy",
+            description="All your beasts are already at full HP!",
+            color=0x00FF00)
+        await ctx.send(embed=embed)
+        return
+
+    # Calculate total cost
+    total_cost = len(damaged_beasts) * HEAL_COST
+
+    # Check if user has enough stones
+    if user.spirit_stones < total_cost:
+        embed = discord.Embed(
+            title="❌ Insufficient Beast Stones",
+            description=f"You have **{len(damaged_beasts)} damaged beasts** requiring **{total_cost} stones** to heal.\n"
+                       f"You only have **{user.spirit_stones} stones**.\n\n"
+                       f"Use `{ctx.bot.config.prefix}heal <beast_id>` to heal individual beasts.",
+            color=0xFF0000)
+
+        # Show damaged beasts
+        damaged_list = []
+        for beast_id, beast in damaged_beasts[:5]:  # Show first 5
+            damaged_list.append(f"#{beast_id} {beast.name} ({beast.stats.hp}/{beast.stats.max_hp} HP)")
+
+        embed.add_field(name="🩹 Damaged Beasts", 
+                       value="\n".join(damaged_list) + 
+                             (f"\n... and {len(damaged_beasts)-5} more" if len(damaged_beasts) > 5 else ""),
+                       inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    # Heal all damaged beasts
+    total_healing = 0
+    healed_beasts = []
+
+    for beast_id, beast in damaged_beasts:
+        old_hp = beast.stats.hp
+        healing_amount = beast.stats.heal()
+        total_healing += healing_amount
+        healed_beasts.append((beast_id, beast, old_hp, healing_amount))
+        await ctx.bot.db.update_beast(beast_id, beast)
+
+    # Deduct total cost
+    user.spirit_stones -= total_cost
+    await ctx.bot.db.update_user(user)
+
+    # Create success embed
+    embed = discord.Embed(
+        title="✨ Mass Healing Complete!",
+        description=f"Healed **{len(damaged_beasts)} beasts** to full HP!",
+        color=0x00FF00)
+
+    embed.add_field(name="📊 Healing Summary", 
+                   value=f"**Beasts Healed:** {len(damaged_beasts)}\n"
+                         f"**Total HP Restored:** {total_healing}\n"
+                         f"**Cost:** {total_cost} stones",
+                   inline=True)
+
+    embed.add_field(name="💰 Remaining Stones", 
+                   value=f"{user.spirit_stones} stones",
+                   inline=True)
+
+    # Show first few healed beasts
+    if len(healed_beasts) <= 3:
+        for beast_id, beast, old_hp, healing in healed_beasts:
+            embed.add_field(name=f"#{beast_id} {beast.name}", 
+                           value=f"{old_hp}→{beast.stats.max_hp} HP (+{healing})",
+                           inline=True)
+    else:
+        # Show summary for many beasts
+        embed.add_field(name="🩹 Healed Beasts", 
+                       value=f"All {len(healed_beasts)} damaged beasts restored to full health!",
+                       inline=False)
 
     await ctx.send(embed=embed)
 
@@ -2428,7 +2775,240 @@ async def battle_command(ctx, opponent: discord.Member = None):
         inline=True)
 
     await ctx.send(embed=embed)
+@commands.command(name='adopt_legend', aliases=['adoptlegend'])
+async def adopt_legend_beast(ctx):
+    """Adopt a guaranteed legendary beast (one-time use for special role users)"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+    user_role = ctx.bot.role_manager.get_user_role(ctx.author)
+    beast_limit = ctx.bot.role_manager.get_beast_limit(user_role)
 
+    # Check if user has special role permission
+    if not ctx.bot.role_manager.can_use_adopt_legend(user_role):
+        embed = discord.Embed(
+            title="❌ Insufficient Permissions",
+            description="You need a special role to use this command!",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Check if already used
+    if user.has_used_adopt_legend:
+        embed = discord.Embed(
+            title="❌ Already Used",
+            description="You have already used your one-time legendary adoption!",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Check inventory space
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+    if len(user_beasts) >= beast_limit:
+        embed = discord.Embed(
+            title="❌ Beast Inventory Full",
+            description=f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Get a guaranteed legendary beast
+    template = ctx.bot.template_manager.get_random_template_by_rarity(BeastRarity.LEGENDARY)
+    if not template:
+        embed = discord.Embed(
+            title="❌ No Legendary Beasts Available",
+            description="No legendary beasts are currently available in the template.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    beast = template.create_beast()
+    beast.owner_id = ctx.author.id
+
+    # Add beast to database
+    beast_id = await ctx.bot.db.add_beast(beast)
+
+    # Update user stats
+    user.has_used_adopt_legend = True
+    user.total_catches += 1
+    await ctx.bot.db.update_user(user)
+
+    # Create success embed
+    embed = discord.Embed(
+        title="🌟 Legendary Beast Adopted!",
+        description=f"**{ctx.author.display_name}** adopted a guaranteed legendary beast!\n**{beast.name}** {beast.rarity.emoji}",
+        color=beast.rarity.color)
+
+    embed.add_field(name="Beast ID", value=f"#{beast_id}", inline=True)
+    embed.add_field(name="Rarity", value="⭐⭐⭐⭐⭐ Legendary", inline=True)
+    embed.add_field(name="Level", value=beast.stats.level, inline=True)
+    embed.add_field(name="Power Level", value=beast.power_level, inline=True)
+    embed.add_field(name="Tendency", value=beast.tendency or "None", inline=True)
+    embed.add_field(name="Location", value=beast.location or "Unknown", inline=True)
+
+    if beast.description:
+        embed.add_field(name="Description", value=beast.description, inline=False)
+
+    embed.add_field(name="✨ Special Privilege", 
+                    value="This was your one-time legendary adoption!", 
+                    inline=False)
+
+    embed.set_footer(text=f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit}")
+    await ctx.send(embed=embed)
+
+
+@commands.command(name='adopt_mythic', aliases=['adoptmythic'])
+async def adopt_mythic_beast(ctx):
+    """Adopt a guaranteed mythic beast (one-time use for personal role users)"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+    user_role = ctx.bot.role_manager.get_user_role(ctx.author)
+    beast_limit = ctx.bot.role_manager.get_beast_limit(user_role)
+
+    # Check if user has personal role permission
+    if not ctx.bot.role_manager.can_use_adopt_mythic(user_role):
+        embed = discord.Embed(
+            title="❌ Insufficient Permissions", 
+            description="You need the personal role to use this command!",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Check if already used
+    if user.has_used_adopt_mythic:
+        embed = discord.Embed(
+            title="❌ Already Used",
+            description="You have already used your one-time mythic adoption!",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Check inventory space
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+    if len(user_beasts) >= beast_limit:
+        embed = discord.Embed(
+            title="❌ Beast Inventory Full",
+            description=f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Get a guaranteed mythic beast
+    template = ctx.bot.template_manager.get_random_template_by_rarity(BeastRarity.MYTHIC)
+    if not template:
+        embed = discord.Embed(
+            title="❌ No Mythic Beasts Available",
+            description="No mythic beasts are currently available in the template.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    beast = template.create_beast()
+    beast.owner_id = ctx.author.id
+
+    # Add beast to database
+    beast_id = await ctx.bot.db.add_beast(beast)
+
+    # Update user stats
+    user.has_used_adopt_mythic = True
+    user.total_catches += 1
+    await ctx.bot.db.update_user(user)
+
+    # Create success embed with special styling for mythic
+    embed = discord.Embed(
+        title="🔥 MYTHIC BEAST ADOPTED! 🔥",
+        description=f"**{ctx.author.display_name}** adopted an ULTRA-RARE mythic beast!\n**{beast.name}** {beast.rarity.emoji}",
+        color=beast.rarity.color)
+
+    embed.add_field(name="Beast ID", value=f"#{beast_id}", inline=True)
+    embed.add_field(name="Rarity", value="⭐⭐⭐⭐⭐⭐ MYTHIC", inline=True)
+    embed.add_field(name="Level", value=beast.stats.level, inline=True)
+    embed.add_field(name="Power Level", value=beast.power_level, inline=True)
+    embed.add_field(name="Tendency", value=beast.tendency or "None", inline=True)
+    embed.add_field(name="Location", value=beast.location or "Unknown", inline=True)
+
+    if beast.description:
+        embed.add_field(name="Description", value=beast.description, inline=False)
+
+    embed.add_field(name="🔥 ULTIMATE PRIVILEGE", 
+                    value="This was your one-time MYTHIC adoption - the rarest of all beasts!", 
+                    inline=False)
+
+    embed.set_footer(text=f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit} | You own a MYTHIC beast!")
+    await ctx.send(embed=embed)
+
+
+@commands.command(name='adoption_status', aliases=['adoptstatus'])
+async def adoption_status(ctx):
+    """Check your special adoption status"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+    user_role = ctx.bot.role_manager.get_user_role(ctx.author)
+
+    embed = discord.Embed(
+        title=f"🎯 {ctx.author.display_name}'s Adoption Status",
+        description="Check your special adoption privileges",
+        color=0x00AAFF)
+
+    # User role info
+    role_names = {
+        UserRole.NORMAL: "Normal User",
+        UserRole.SPECIAL: "Special Role User", 
+        UserRole.PERSONAL: "Personal Role User"
+    }
+    embed.add_field(name="👤 Your Role", value=role_names[user_role], inline=True)
+    embed.add_field(name="📦 Beast Limit", 
+                    value=f"{ctx.bot.role_manager.get_beast_limit(user_role)} beasts", 
+                    inline=True)
+
+    # Regular adoption status
+    if user.last_adopt:
+        cooldown_hours = ctx.bot.config.adopt_cooldown_hours
+        next_adopt = user.last_adopt + datetime.timedelta(hours=cooldown_hours)
+        if datetime.datetime.now() < next_adopt:
+            embed.add_field(name="⏰ Next Regular Adopt", 
+                          value=f"<t:{int(next_adopt.timestamp())}:R>", 
+                          inline=False)
+        else:
+            embed.add_field(name="✅ Regular Adopt", value="Available now!", inline=False)
+    else:
+        embed.add_field(name="✅ Regular Adopt", value="Available now!", inline=False)
+
+    # Special adoptions
+    legend_available = ctx.bot.role_manager.can_use_adopt_legend(user_role)
+    mythic_available = ctx.bot.role_manager.can_use_adopt_mythic(user_role)
+
+    # Legend adoption status
+    if legend_available:
+        legend_status = "❌ Already Used" if user.has_used_adopt_legend else "✅ Available"
+        embed.add_field(name="🌟 Legendary Adoption", value=legend_status, inline=True)
+    else:
+        embed.add_field(name="🌟 Legendary Adoption", value="🔒 Requires Special Role", inline=True)
+
+    # Mythic adoption status  
+    if mythic_available:
+        mythic_status = "❌ Already Used" if user.has_used_adopt_mythic else "✅ Available"
+        embed.add_field(name="🔥 Mythic Adoption", value=mythic_status, inline=True)
+    else:
+        embed.add_field(name="🔥 Mythic Adoption", value="🔒 Requires Personal Role", inline=True)
+
+    # Command info
+    available_commands = []
+    if not user.last_adopt or datetime.datetime.now() >= user.last_adopt + datetime.timedelta(hours=ctx.bot.config.adopt_cooldown_hours):
+        available_commands.append(f"`{ctx.bot.config.prefix}adopt` - Regular adoption")
+
+    if legend_available and not user.has_used_adopt_legend:
+        available_commands.append(f"`{ctx.bot.config.prefix}adopt_legend` - Guaranteed legendary")
+
+    if mythic_available and not user.has_used_adopt_mythic:
+        available_commands.append(f"`{ctx.bot.config.prefix}adopt_mythic` - Guaranteed mythic")
+
+    if available_commands:
+        embed.add_field(name="🎯 Available Commands", 
+                       value="\n".join(available_commands), 
+                       inline=False)
+    else:
+        embed.add_field(name="⏸️ No Commands Available", 
+                       value="All adoptions are on cooldown or used", 
+                       inline=False)
+
+    await ctx.send(embed=embed)
 
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
@@ -2534,10 +3114,7 @@ async def catch_beast(ctx):
 
     await ctx.send(embed=embed)
 
-
-# ============================================================================
 # Flask Web Server (to keep Render happy)
-# ============================================================================
 
 app = Flask(__name__)
 
@@ -2576,11 +3153,7 @@ def run_bot_with_flask():
     # Run Discord bot in main thread
     main()
 
-
-# ============================================================================
 # NEW BACKUP ADMIN COMMANDS - ADD THESE BEFORE def main():
-# ============================================================================
-
 
 @commands.command(name='backupstatus')
 @commands.has_permissions(administrator=True)
@@ -2588,52 +3161,33 @@ async def backup_status(ctx):
     """Check backup storage usage and status"""
     storage_info = ctx.bot.db.get_storage_usage()
 
-    embed = discord.Embed(title="📊 Backup System Status", color=0x00AAFF)
+    embed = discord.Embed(
+        title="📊 Backup System Status",
+        color=0x00AAFF
+    )
 
-    embed.add_field(name="📁 Total Backups",
-                    value=storage_info['total_files'],
-                    inline=True)
-    embed.add_field(name="💾 Storage Used",
-                    value=f"{storage_info['total_size_mb']:.1f} MB",
-                    inline=True)
-    embed.add_field(name="📊 Max Storage",
-                    value=f"{ctx.bot.config.backup_max_size_mb} MB",
-                    inline=True)
+    embed.add_field(name="📁 Total Backups", value=storage_info['total_files'], inline=True)
+    embed.add_field(name="💾 Storage Used", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
+    embed.add_field(name="📊 Max Storage", value=f"{ctx.bot.config.backup_max_size_mb} MB", inline=True)
 
-    embed.add_field(name="⚙️ Backup Enabled",
-                    value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No",
-                    inline=True)
-    embed.add_field(name="⏰ Interval",
-                    value=f"{ctx.bot.config.backup_interval_hours}h",
-                    inline=True)
-    embed.add_field(name="🗃️ Retention",
-                    value=f"{ctx.bot.config.backup_retention_count} files",
-                    inline=True)
+    embed.add_field(name="⚙️ Backup Enabled", value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No", inline=True)
+    embed.add_field(name="⏰ Interval", value=f"{ctx.bot.config.backup_interval_hours}h", inline=True)
+    embed.add_field(name="🗃️ Retention", value=f"{ctx.bot.config.backup_retention_count} files", inline=True)
 
     if storage_info['oldest_backup']:
-        oldest_time = datetime.datetime.fromtimestamp(
-            storage_info['oldest_backup'].stat().st_mtime)
-        embed.add_field(name="📅 Oldest Backup",
-                        value=oldest_time.strftime("%Y-%m-%d %H:%M"),
-                        inline=True)
+        oldest_time = datetime.datetime.fromtimestamp(storage_info['oldest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Oldest Backup", value=oldest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
 
     if storage_info['newest_backup']:
-        newest_time = datetime.datetime.fromtimestamp(
-            storage_info['newest_backup'].stat().st_mtime)
-        embed.add_field(name="📅 Newest Backup",
-                        value=newest_time.strftime("%Y-%m-%d %H:%M"),
-                        inline=True)
+        newest_time = datetime.datetime.fromtimestamp(storage_info['newest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Newest Backup", value=newest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
 
     # Storage warning
-    usage_percent = (storage_info['total_size_mb'] /
-                     ctx.bot.config.backup_max_size_mb) * 100
+    usage_percent = (storage_info['total_size_mb'] / ctx.bot.config.backup_max_size_mb) * 100
     if usage_percent > 80:
-        embed.add_field(name="⚠️ Warning",
-                        value=f"Storage usage at {usage_percent:.1f}%",
-                        inline=False)
+        embed.add_field(name="⚠️ Warning", value=f"Storage usage at {usage_percent:.1f}%", inline=False)
 
     await ctx.send(embed=embed)
-
 
 @commands.command(name='backup')
 @commands.has_permissions(administrator=True)
@@ -2642,41 +3196,38 @@ async def manual_backup(ctx):
     embed = discord.Embed(
         title="🔄 Creating Backup...",
         description="Please wait while the backup is created.",
-        color=0xFFAA00)
+        color=0xFFAA00
+    )
     message = await ctx.send(embed=embed)
 
     try:
-        backup_file = await ctx.bot.db.backup_database(
-            keep_count=ctx.bot.config.backup_retention_count)
+        backup_file = await ctx.bot.db.backup_database(keep_count=ctx.bot.config.backup_retention_count)
         if backup_file:
             embed = discord.Embed(
                 title="✅ Backup Created",
                 description=f"Database backup saved successfully!",
-                color=0x00FF00)
-            embed.add_field(name="📁 File",
-                            value=f"`{Path(backup_file).name}`",
-                            inline=True)
+                color=0x00FF00
+            )
+            embed.add_field(name="📁 File", value=f"`{Path(backup_file).name}`", inline=True)
 
             # Show updated storage info
             storage_info = ctx.bot.db.get_storage_usage()
-            embed.add_field(name="💾 Total Storage",
-                            value=f"{storage_info['total_size_mb']:.1f} MB",
-                            inline=True)
-            embed.add_field(name="📊 Total Backups",
-                            value=storage_info['total_files'],
-                            inline=True)
+            embed.add_field(name="💾 Total Storage", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
+            embed.add_field(name="📊 Total Backups", value=storage_info['total_files'], inline=True)
         else:
             embed = discord.Embed(
                 title="❌ Backup Failed",
                 description="Failed to create backup. Check logs for details.",
-                color=0xFF0000)
+                color=0xFF0000
+            )
     except Exception as e:
-        embed = discord.Embed(title="❌ Backup Error",
-                              description=f"An error occurred: {str(e)}",
-                              color=0xFF0000)
+        embed = discord.Embed(
+            title="❌ Backup Error",
+            description=f"An error occurred: {str(e)}",
+            color=0xFF0000
+        )
 
     await message.edit(embed=embed)
-
 
 @commands.command(name='cleanbackups')
 @commands.has_permissions(administrator=True)
@@ -2686,9 +3237,11 @@ async def clean_backups(ctx, keep_count: int = None):
         keep_count = ctx.bot.config.backup_retention_count
 
     if keep_count < 1:
-        embed = discord.Embed(title="❌ Invalid Count",
-                              description="Keep count must be at least 1.",
-                              color=0xFF0000)
+        embed = discord.Embed(
+            title="❌ Invalid Count",
+            description="Keep count must be at least 1.",
+            color=0xFF0000
+        )
         await ctx.send(embed=embed)
         return
 
@@ -2697,35 +3250,27 @@ async def clean_backups(ctx, keep_count: int = None):
         await ctx.bot.db._cleanup_old_backups(Path("backups"), keep_count)
         storage_after = ctx.bot.db.get_storage_usage()
 
-        files_removed = storage_before['total_files'] - storage_after[
-            'total_files']
-        space_freed = storage_before['total_size_mb'] - storage_after[
-            'total_size_mb']
+        files_removed = storage_before['total_files'] - storage_after['total_files']
+        space_freed = storage_before['total_size_mb'] - storage_after['total_size_mb']
 
-        embed = discord.Embed(title="🧹 Backup Cleanup Complete",
-                              color=0x00FF00)
-        embed.add_field(name="🗑️ Files Removed",
-                        value=files_removed,
-                        inline=True)
-        embed.add_field(name="💾 Space Freed",
-                        value=f"{space_freed:.1f} MB",
-                        inline=True)
-        embed.add_field(name="📁 Files Remaining",
-                        value=storage_after['total_files'],
-                        inline=True)
+        embed = discord.Embed(
+            title="🧹 Backup Cleanup Complete",
+            color=0x00FF00
+        )
+        embed.add_field(name="🗑️ Files Removed", value=files_removed, inline=True)
+        embed.add_field(name="💾 Space Freed", value=f"{space_freed:.1f} MB", inline=True)
+        embed.add_field(name="📁 Files Remaining", value=storage_after['total_files'], inline=True)
 
     except Exception as e:
-        embed = discord.Embed(title="❌ Cleanup Failed",
-                              description=f"Error during cleanup: {str(e)}",
-                              color=0xFF0000)
+        embed = discord.Embed(
+            title="❌ Cleanup Failed",
+            description=f"Error during cleanup: {str(e)}",
+            color=0xFF0000
+        )
 
     await ctx.send(embed=embed)
 
-
-# ============================================================================
-# MAIN FUNCTION - REPLACE YOUR ENTIRE main() FUNCTION WITH THIS
-# ============================================================================
-
+# In your main() function, add these two lines with the other bot.add_command() calls:
 
 def main():
     """Main entry point"""
@@ -2752,11 +3297,19 @@ def main():
     bot.add_command(set_active_beast)
     bot.add_command(show_balance)
     bot.add_command(battle_command)
-
-    # NEW: Add backup admin commands
+    bot.add_command(adopt_legend_beast)
+    bot.add_command(adopt_mythic_beast)
+    bot.add_command(adoption_status)
+    bot.add_command(force_spawn)
+    bot.add_command(spawn_info)
+    bot.add_command(next_spawn_time)
     bot.add_command(backup_status)
     bot.add_command(manual_backup)
     bot.add_command(clean_backups)
+
+    # ADD THESE NEW HEAL COMMANDS:
+    bot.add_command(heal_beast)        # !heal command
+    bot.add_command(heal_all_beasts)   # !healall command
 
     try:
         bot.run(config.token)
@@ -2765,16 +3318,12 @@ def main():
     except Exception as e:
         print(f"Error running bot: {e}")
 
-
-# ============================================================================
-# KEEP YOUR EXISTING BOTTOM CODE (if __name__ == "__main__":)
-# ============================================================================
-
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
         run_bot_with_flask()
     else:  # Running locally
         main()
+
 
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
