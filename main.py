@@ -483,15 +483,15 @@ class BeastStats:
 
 @dataclass
 class Beast:
-        """Main beast class"""
-        name: str
-        rarity: BeastRarity
-        tendency: str
-        stats: BeastStats
-        description: str = ""
-        caught_at: datetime.datetime = None
-        owner_id: int = None
-        unique_id: str = None
+    """Main beast class"""
+    name: str
+    rarity: BeastRarity
+    tendency: str
+    stats: BeastStats
+    description: str = ""
+    caught_at: datetime.datetime = None
+    owner_id: int = None
+    unique_id: str = None
 
     def __post_init__(self):
         if self.caught_at is None:
