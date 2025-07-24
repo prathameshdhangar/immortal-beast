@@ -27,15 +27,26 @@ from flask import Flask
 
 # Configuration Management
 
+
 class BotConfig(BaseModel):
     """Bot configuration with validation"""
     token: str = Field(..., description="Discord bot token")
     prefix: str = Field(default="!", description="Command prefix")
-    database_path: str = Field(default="data/immortal_beasts.db", description="Database file path")
-    backup_interval_hours: int = Field(default=6, ge=1, le=24, description="Backup interval in hours")
-    backup_retention_count: int = Field(default=10, ge=1, le=100, description="Number of backups to retain")
-    backup_max_size_mb: int = Field(default=100, ge=10, le=1000, description="Maximum total backup size in MB")
-    backup_enabled: bool = Field(default=True, description="Enable/disable automatic backups")
+    database_path: str = Field(default="data/immortal_beasts.db",
+                               description="Database file path")
+    backup_interval_hours: int = Field(default=6,
+                                       ge=1,
+                                       le=24,
+                                       description="Backup interval in hours")
+    backup_retention_count: int = Field(
+        default=10, ge=1, le=100, description="Number of backups to retain")
+    backup_max_size_mb: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Maximum total backup size in MB")
+    backup_enabled: bool = Field(
+        default=True, description="Enable/disable automatic backups")
     spawn_interval_min: int = Field(
         default=15,
         ge=5,
@@ -159,29 +170,35 @@ class BotConfig(BaseModel):
             backup_interval = 12  # Backup twice daily
         else:  # Development
             backup_retention = 10  # Keep 10 backups locally
-            backup_interval = 6   # Backup every 6 hours
+            backup_interval = 6  # Backup every 6 hours
 
         return cls(
             token=token,
             prefix=os.getenv('BOT_PREFIX', '!'),
             database_path='/tmp/immortal_beasts.db',  # Use /tmp for Render
             special_role_ids=special_role_ids,
-            personal_role_id=int(os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
+            personal_role_id=int(
+                os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
             xp_chat_channel_ids=xp_channel_ids,
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
-            backup_interval_hours=int(os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
-            backup_retention_count=int(os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
+            backup_interval_hours=int(
+                os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
+            backup_retention_count=int(
+                os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
             backup_max_size_mb=int(os.getenv('BACKUP_MAX_SIZE_MB', '100')),
-            backup_enabled=os.getenv('BACKUP_ENABLED', 'true').lower() == 'true',
+            backup_enabled=os.getenv('BACKUP_ENABLED',
+                                     'true').lower() == 'true',
             spawn_interval_min=int(os.getenv('SPAWN_INTERVAL_MIN', '15')),
             spawn_interval_max=int(os.getenv('SPAWN_INTERVAL_MAX', '45')),
             xp_per_message=int(os.getenv('XP_PER_MESSAGE', '5')),
             xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '60')),
-            starting_beast_stones=int(os.getenv('STARTING_BEAST_STONES', '1000')),
-            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48'))
-        )
+            starting_beast_stones=int(
+                os.getenv('STARTING_BEAST_STONES', '1000')),
+            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')))
+
 
 # Enums and Constants
+
 
 class BeastRarity(Enum):
     """Beast rarity levels"""
@@ -230,7 +247,9 @@ class UserRole(Enum):
     SPECIAL = "special"
     PERSONAL = "personal"
 
+
 # Data Models
+
 
 @dataclass
 class BeastStats:
@@ -550,7 +569,9 @@ class User:
         time_since_last = datetime.datetime.now() - self.last_xp_gain
         return time_since_last.total_seconds() >= cooldown_seconds
 
+
 # Database Layer
+
 
 class DatabaseInterface(ABC):
     """Abstract database interface"""
@@ -801,7 +822,9 @@ class SQLiteDatabase(DatabaseInterface):
             logging.error(f"Failed to delete beast {beast_id}: {e}")
             return False
 
-    async def backup_database(self, backup_dir: str = "backups", keep_count: int = 10) -> Optional[str]:
+    async def backup_database(self,
+                              backup_dir: str = "backups",
+                              keep_count: int = 10) -> Optional[str]:
         """Create database backup with automatic cleanup"""
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
@@ -826,11 +849,9 @@ class SQLiteDatabase(DatabaseInterface):
         """Remove old backup files, keeping only the latest ones"""
         try:
             # Get all backup files sorted by creation time (newest first)
-            backup_files = sorted(
-                backup_path.glob("backup_*.db"), 
-                key=lambda p: p.stat().st_mtime, 
-                reverse=True
-            )
+            backup_files = sorted(backup_path.glob("backup_*.db"),
+                                  key=lambda p: p.stat().st_mtime,
+                                  reverse=True)
 
             # Remove old backups beyond keep_count
             removed_count = 0
@@ -849,17 +870,29 @@ class SQLiteDatabase(DatabaseInterface):
         """Get current backup storage usage"""
         backup_path = Path(backup_dir)
         if not backup_path.exists():
-            return {'total_files': 0, 'total_size_mb': 0, 'oldest_backup': None, 'newest_backup': None}
+            return {
+                'total_files': 0,
+                'total_size_mb': 0,
+                'oldest_backup': None,
+                'newest_backup': None
+            }
 
         backup_files = list(backup_path.glob("backup_*.db"))
         total_size = sum(f.stat().st_size for f in backup_files)
 
         return {
-            'total_files': len(backup_files),
-            'total_size_mb': total_size / (1024 * 1024),
-            'oldest_backup': min(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
-            'newest_backup': max(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
+            'total_files':
+            len(backup_files),
+            'total_size_mb':
+            total_size / (1024 * 1024),
+            'oldest_backup':
+            min(backup_files, key=lambda f: f.stat().st_mtime)
+            if backup_files else None,
+            'newest_backup':
+            max(backup_files, key=lambda f: f.stat().st_mtime)
+            if backup_files else None,
         }
+
 
 # Battle System and Template Manager
 
@@ -1549,7 +1582,8 @@ class BeastTemplateManager:
         try:
             with open(self.data_file, 'w', encoding='utf-8') as f:
                 yaml.dump(default_data, f, default_flow_style=False)
-            logging.info(f"Created expanded beast templates in {self.data_file}")
+            logging.info(
+                f"Created expanded beast templates in {self.data_file}")
             # Load the templates we just created
             self._load_templates()
         except Exception as e:
@@ -1688,7 +1722,9 @@ async def select_beast_for_battle(
         await message.delete()
         return None
 
+
 # Main Bot Class
+
 
 class ImmortalBeastsBot(commands.Bot):
     """Main bot class"""
@@ -1721,11 +1757,14 @@ class ImmortalBeastsBot(commands.Bot):
         self.logger.info("Database initialized")
 
         # Update backup task interval based on config
-        self.backup_task.change_interval(hours=self.config.backup_interval_hours)
+        self.backup_task.change_interval(
+            hours=self.config.backup_interval_hours)
 
         if self.config.backup_enabled:
             self.backup_task.start()
-            self.logger.info(f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})")
+            self.logger.info(
+                f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})"
+            )
         else:
             self.logger.info("Backup task disabled")
 
@@ -1868,12 +1907,16 @@ class ImmortalBeastsBot(commands.Bot):
             storage_info = self.db.get_storage_usage()
 
             if storage_info['total_size_mb'] > self.config.backup_max_size_mb:
-                self.logger.warning(f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB")
+                self.logger.warning(
+                    f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB"
+                )
                 # Force additional cleanup
-                await self.db._cleanup_old_backups(Path("backups"), self.config.backup_retention_count // 2)
+                await self.db._cleanup_old_backups(
+                    Path("backups"), self.config.backup_retention_count // 2)
 
             # Create new backup with retention
-            backup_file = await self.db.backup_database(keep_count=self.config.backup_retention_count)
+            backup_file = await self.db.backup_database(
+                keep_count=self.config.backup_retention_count)
 
             if backup_file:
                 self.logger.info(f"Backup completed: {backup_file}")
@@ -1894,9 +1937,12 @@ class ImmortalBeastsBot(commands.Bot):
             # Check if it's time to spawn (using instance variable to track timing)
             if not hasattr(self, '_next_spawn_time'):
                 # Initialize with random time between min and max interval
-                wait_minutes = random.randint(self.config.spawn_interval_min, self.config.spawn_interval_max)
-                self._next_spawn_time = datetime.datetime.now() + datetime.timedelta(minutes=wait_minutes)
-                self.logger.info(f"Next beast spawn scheduled in {wait_minutes} minutes")
+                wait_minutes = random.randint(self.config.spawn_interval_min,
+                                              self.config.spawn_interval_max)
+                self._next_spawn_time = datetime.datetime.now(
+                ) + datetime.timedelta(minutes=wait_minutes)
+                self.logger.info(
+                    f"Next beast spawn scheduled in {wait_minutes} minutes")
                 return
 
             # Check if it's time to spawn
@@ -1909,14 +1955,20 @@ class ImmortalBeastsBot(commands.Bot):
 
             if channel:
                 await self.spawn_beast(channel)
-                self.logger.info(f"Beast spawned in channel: {channel.name} ({channel_id})")
+                self.logger.info(
+                    f"Beast spawned in channel: {channel.name} ({channel_id})")
 
                 # Schedule next spawn
-                wait_minutes = random.randint(self.config.spawn_interval_min, self.config.spawn_interval_max)
-                self._next_spawn_time = datetime.datetime.now() + datetime.timedelta(minutes=wait_minutes)
-                self.logger.info(f"Next beast spawn scheduled in {wait_minutes} minutes")
+                wait_minutes = random.randint(self.config.spawn_interval_min,
+                                              self.config.spawn_interval_max)
+                self._next_spawn_time = datetime.datetime.now(
+                ) + datetime.timedelta(minutes=wait_minutes)
+                self.logger.info(
+                    f"Next beast spawn scheduled in {wait_minutes} minutes")
             else:
-                self.logger.warning(f"Spawn channel {channel_id} not found, removing from spawn channels")
+                self.logger.warning(
+                    f"Spawn channel {channel_id} not found, removing from spawn channels"
+                )
                 del self.spawn_channels[channel_id]
 
         except Exception as e:
@@ -1977,7 +2029,9 @@ class ImmortalBeastsBot(commands.Bot):
         except Exception as e:
             self.logger.error(f"Error spawning beast: {e}")
 
+
 # Commands
+
 
 @commands.command(name='stone')
 async def daily_stone_reward(ctx):
@@ -2025,7 +2079,9 @@ async def daily_stone_reward(ctx):
     embed.set_footer(text="Come back tomorrow for another 100 beast stones!")
     await ctx.send(embed=embed)
 
+
 # SPAWN MANAGEMENT COMMANDS - ADD THESE TO YOUR COMMANDS SECTION
+
 
 @commands.command(name='forcespawn')
 @commands.has_permissions(administrator=True)
@@ -2047,10 +2103,9 @@ async def force_spawn(ctx):
             color=0x00FF00)
         await ctx.send(embed=embed)
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Spawn Failed",
-            description=f"Failed to spawn beast: {str(e)}",
-            color=0xFF0000)
+        embed = discord.Embed(title="❌ Spawn Failed",
+                              description=f"Failed to spawn beast: {str(e)}",
+                              color=0xFF0000)
         await ctx.send(embed=embed)
 
 
@@ -2058,9 +2113,7 @@ async def force_spawn(ctx):
 @commands.has_permissions(administrator=True)
 async def spawn_info(ctx):
     """Show spawn system information (admin only)"""
-    embed = discord.Embed(
-        title="📊 Beast Spawn Information",
-        color=0x00AAFF)
+    embed = discord.Embed(title="📊 Beast Spawn Information", color=0x00AAFF)
 
     # Spawn channels
     if ctx.bot.spawn_channels:
@@ -2071,27 +2124,38 @@ async def spawn_info(ctx):
                 channel_list.append(f"#{channel.name}")
             else:
                 channel_list.append(f"Unknown ({channel_id})")
-        embed.add_field(name="🎯 Spawn Channels", 
-                       value="\n".join(channel_list) if channel_list else "None", 
-                       inline=False)
+        embed.add_field(
+            name="🎯 Spawn Channels",
+            value="\n".join(channel_list) if channel_list else "None",
+            inline=False)
     else:
-        embed.add_field(name="🎯 Spawn Channels", value="None configured", inline=False)
+        embed.add_field(name="🎯 Spawn Channels",
+                        value="None configured",
+                        inline=False)
 
     # Timing info
-    embed.add_field(name="⏰ Spawn Interval", 
-                   value=f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} minutes", 
-                   inline=True)
+    embed.add_field(
+        name="⏰ Spawn Interval",
+        value=
+        f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} minutes",
+        inline=True)
 
     # Next spawn time
     if hasattr(ctx.bot, '_next_spawn_time'):
         time_until_spawn = ctx.bot._next_spawn_time - datetime.datetime.now()
         minutes_left = int(time_until_spawn.total_seconds() / 60)
         if minutes_left > 0:
-            embed.add_field(name="⏱️ Next Spawn", value=f"In {minutes_left} minutes", inline=True)
+            embed.add_field(name="⏱️ Next Spawn",
+                            value=f"In {minutes_left} minutes",
+                            inline=True)
         else:
-            embed.add_field(name="⏱️ Next Spawn", value="Due now!", inline=True)
+            embed.add_field(name="⏱️ Next Spawn",
+                            value="Due now!",
+                            inline=True)
     else:
-        embed.add_field(name="⏱️ Next Spawn", value="Not scheduled", inline=True)
+        embed.add_field(name="⏱️ Next Spawn",
+                        value="Not scheduled",
+                        inline=True)
 
     # Current spawned beasts
     active_spawns = []
@@ -2099,11 +2163,13 @@ async def spawn_info(ctx):
         if beast:  # There's a beast waiting to be caught
             channel = ctx.bot.get_channel(channel_id)
             if channel:
-                active_spawns.append(f"#{channel.name}: {beast.name} {beast.rarity.emoji}")
+                active_spawns.append(
+                    f"#{channel.name}: {beast.name} {beast.rarity.emoji}")
 
-    embed.add_field(name="🐉 Active Wild Beasts", 
-                   value="\n".join(active_spawns) if active_spawns else "None", 
-                   inline=False)
+    embed.add_field(
+        name="🐉 Active Wild Beasts",
+        value="\n".join(active_spawns) if active_spawns else "None",
+        inline=False)
 
     await ctx.send(embed=embed)
 
@@ -2114,7 +2180,8 @@ async def next_spawn_time(ctx):
     if not hasattr(ctx.bot, '_next_spawn_time'):
         embed = discord.Embed(
             title="⏰ Next Beast Spawn",
-            description="Spawn timing not initialized yet. Please wait a moment.",
+            description=
+            "Spawn timing not initialized yet. Please wait a moment.",
             color=0xFFAA00)
         await ctx.send(embed=embed)
         return
@@ -2123,24 +2190,28 @@ async def next_spawn_time(ctx):
     minutes_left = int(time_until_spawn.total_seconds() / 60)
 
     if minutes_left <= 0:
-        embed = discord.Embed(
-            title="🎯 Next Beast Spawn",
-            description="A beast should spawn very soon!",
-            color=0x00FF00)
+        embed = discord.Embed(title="🎯 Next Beast Spawn",
+                              description="A beast should spawn very soon!",
+                              color=0x00FF00)
     else:
         embed = discord.Embed(
             title="⏰ Next Beast Spawn",
-            description=f"Next wild beast will spawn in approximately **{minutes_left} minutes**",
+            description=
+            f"Next wild beast will spawn in approximately **{minutes_left} minutes**",
             color=0x00AAFF)
 
-        embed.add_field(name="📍 Spawn Locations", 
-                       value=f"{len(ctx.bot.spawn_channels)} channels configured", 
-                       inline=True)
-        embed.add_field(name="🎲 Spawn Range", 
-                       value=f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} min", 
-                       inline=True)
+        embed.add_field(
+            name="📍 Spawn Locations",
+            value=f"{len(ctx.bot.spawn_channels)} channels configured",
+            inline=True)
+        embed.add_field(
+            name="🎲 Spawn Range",
+            value=
+            f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} min",
+            inline=True)
 
     await ctx.send(embed=embed)
+
 
 @commands.command(name='adopt')
 async def adopt_beast(ctx):
@@ -2445,7 +2516,9 @@ async def show_balance(ctx):
 
     await ctx.send(embed=embed)
 
+
 # Add this new heal command to your commands section
+
 
 @commands.command(name='heal')
 async def heal_beast(ctx, beast_id: int):
@@ -2459,9 +2532,10 @@ async def heal_beast(ctx, beast_id: int):
     if user.spirit_stones < HEAL_COST:
         embed = discord.Embed(
             title="❌ Insufficient Beast Stones",
-            description=f"You need **{HEAL_COST} beast stones** to heal a beast!\n"
-                       f"You currently have **{user.spirit_stones} stones**.\n"
-                       f"Use `{ctx.bot.config.prefix}stone` to get daily stones.",
+            description=
+            f"You need **{HEAL_COST} beast stones** to heal a beast!\n"
+            f"You currently have **{user.spirit_stones} stones**.\n"
+            f"Use `{ctx.bot.config.prefix}stone` to get daily stones.",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -2491,11 +2565,11 @@ async def heal_beast(ctx, beast_id: int):
         embed = discord.Embed(
             title="💚 Beast Already Healthy",
             description=f"**{target_beast.name}** is already at full HP!\n"
-                       f"HP: {target_beast.stats.hp}/{target_beast.stats.max_hp}",
+            f"HP: {target_beast.stats.hp}/{target_beast.stats.max_hp}",
             color=0x00FF00)
-        embed.add_field(name="💰 Beast Stones", 
-                       value=f"No stones spent: {user.spirit_stones}", 
-                       inline=True)
+        embed.add_field(name="💰 Beast Stones",
+                        value=f"No stones spent: {user.spirit_stones}",
+                        inline=True)
         await ctx.send(embed=embed)
         return
 
@@ -2513,31 +2587,37 @@ async def heal_beast(ctx, beast_id: int):
     # Create success embed
     embed = discord.Embed(
         title="✨ Beast Healed!",
-        description=f"**{target_beast.name}** has been fully healed!\n{target_beast.rarity.emoji}",
+        description=
+        f"**{target_beast.name}** has been fully healed!\n{target_beast.rarity.emoji}",
         color=target_beast.rarity.color)
 
-    embed.add_field(name="🐉 Beast Info", 
-                   value=f"**Name:** {target_beast.name}\n"
-                         f"**ID:** #{beast_id}\n"
-                         f"**Level:** {target_beast.stats.level}",
-                   inline=True)
+    embed.add_field(name="🐉 Beast Info",
+                    value=f"**Name:** {target_beast.name}\n"
+                    f"**ID:** #{beast_id}\n"
+                    f"**Level:** {target_beast.stats.level}",
+                    inline=True)
 
-    embed.add_field(name="❤️ HP Restored", 
-                   value=f"**Before:** {old_hp}/{target_beast.stats.max_hp}\n"
-                         f"**After:** {target_beast.stats.hp}/{target_beast.stats.max_hp}\n"
-                         f"**Healed:** +{healing_amount} HP",
-                   inline=True)
+    embed.add_field(
+        name="❤️ HP Restored",
+        value=f"**Before:** {old_hp}/{target_beast.stats.max_hp}\n"
+        f"**After:** {target_beast.stats.hp}/{target_beast.stats.max_hp}\n"
+        f"**Healed:** +{healing_amount} HP",
+        inline=True)
 
-    embed.add_field(name="💰 Cost", 
-                   value=f"**Spent:** {HEAL_COST} stones\n"
-                         f"**Remaining:** {user.spirit_stones} stones",
-                   inline=True)
+    embed.add_field(name="💰 Cost",
+                    value=f"**Spent:** {HEAL_COST} stones\n"
+                    f"**Remaining:** {user.spirit_stones} stones",
+                    inline=True)
 
-    embed.set_footer(text=f"Use {ctx.bot.config.prefix}beast {beast_id} to view full beast details")
+    embed.set_footer(
+        text=
+        f"Use {ctx.bot.config.prefix}beast {beast_id} to view full beast details"
+    )
     await ctx.send(embed=embed)
 
 
 # Also add this enhanced heal_all command as a bonus feature
+
 
 @commands.command(name='healall')
 async def heal_all_beasts(ctx):
@@ -2549,10 +2629,9 @@ async def heal_all_beasts(ctx):
     user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
 
     if not user_beasts:
-        embed = discord.Embed(
-            title="📦 No Beasts",
-            description="You don't have any beasts to heal!",
-            color=0xFF0000)
+        embed = discord.Embed(title="📦 No Beasts",
+                              description="You don't have any beasts to heal!",
+                              color=0xFF0000)
         await ctx.send(embed=embed)
         return
 
@@ -2577,20 +2656,24 @@ async def heal_all_beasts(ctx):
     if user.spirit_stones < total_cost:
         embed = discord.Embed(
             title="❌ Insufficient Beast Stones",
-            description=f"You have **{len(damaged_beasts)} damaged beasts** requiring **{total_cost} stones** to heal.\n"
-                       f"You only have **{user.spirit_stones} stones**.\n\n"
-                       f"Use `{ctx.bot.config.prefix}heal <beast_id>` to heal individual beasts.",
+            description=
+            f"You have **{len(damaged_beasts)} damaged beasts** requiring **{total_cost} stones** to heal.\n"
+            f"You only have **{user.spirit_stones} stones**.\n\n"
+            f"Use `{ctx.bot.config.prefix}heal <beast_id>` to heal individual beasts.",
             color=0xFF0000)
 
         # Show damaged beasts
         damaged_list = []
         for beast_id, beast in damaged_beasts[:5]:  # Show first 5
-            damaged_list.append(f"#{beast_id} {beast.name} ({beast.stats.hp}/{beast.stats.max_hp} HP)")
+            damaged_list.append(
+                f"#{beast_id} {beast.name} ({beast.stats.hp}/{beast.stats.max_hp} HP)"
+            )
 
-        embed.add_field(name="🩹 Damaged Beasts", 
-                       value="\n".join(damaged_list) + 
-                             (f"\n... and {len(damaged_beasts)-5} more" if len(damaged_beasts) > 5 else ""),
-                       inline=False)
+        embed.add_field(name="🩹 Damaged Beasts",
+                        value="\n".join(damaged_list) +
+                        (f"\n... and {len(damaged_beasts)-5} more"
+                         if len(damaged_beasts) > 5 else ""),
+                        inline=False)
         await ctx.send(embed=embed)
         return
 
@@ -2615,27 +2698,30 @@ async def heal_all_beasts(ctx):
         description=f"Healed **{len(damaged_beasts)} beasts** to full HP!",
         color=0x00FF00)
 
-    embed.add_field(name="📊 Healing Summary", 
-                   value=f"**Beasts Healed:** {len(damaged_beasts)}\n"
-                         f"**Total HP Restored:** {total_healing}\n"
-                         f"**Cost:** {total_cost} stones",
-                   inline=True)
+    embed.add_field(name="📊 Healing Summary",
+                    value=f"**Beasts Healed:** {len(damaged_beasts)}\n"
+                    f"**Total HP Restored:** {total_healing}\n"
+                    f"**Cost:** {total_cost} stones",
+                    inline=True)
 
-    embed.add_field(name="💰 Remaining Stones", 
-                   value=f"{user.spirit_stones} stones",
-                   inline=True)
+    embed.add_field(name="💰 Remaining Stones",
+                    value=f"{user.spirit_stones} stones",
+                    inline=True)
 
     # Show first few healed beasts
     if len(healed_beasts) <= 3:
         for beast_id, beast, old_hp, healing in healed_beasts:
-            embed.add_field(name=f"#{beast_id} {beast.name}", 
-                           value=f"{old_hp}→{beast.stats.max_hp} HP (+{healing})",
-                           inline=True)
+            embed.add_field(
+                name=f"#{beast_id} {beast.name}",
+                value=f"{old_hp}→{beast.stats.max_hp} HP (+{healing})",
+                inline=True)
     else:
         # Show summary for many beasts
-        embed.add_field(name="🩹 Healed Beasts", 
-                       value=f"All {len(healed_beasts)} damaged beasts restored to full health!",
-                       inline=False)
+        embed.add_field(
+            name="🩹 Healed Beasts",
+            value=
+            f"All {len(healed_beasts)} damaged beasts restored to full health!",
+            inline=False)
 
     await ctx.send(embed=embed)
 
@@ -2775,6 +2861,8 @@ async def battle_command(ctx, opponent: discord.Member = None):
         inline=True)
 
     await ctx.send(embed=embed)
+
+
 @commands.command(name='adopt_legend', aliases=['adoptlegend'])
 async def adopt_legend_beast(ctx):
     """Adopt a guaranteed legendary beast (one-time use for special role users)"""
@@ -2795,7 +2883,8 @@ async def adopt_legend_beast(ctx):
     if user.has_used_adopt_legend:
         embed = discord.Embed(
             title="❌ Already Used",
-            description="You have already used your one-time legendary adoption!",
+            description=
+            "You have already used your one-time legendary adoption!",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -2805,17 +2894,20 @@ async def adopt_legend_beast(ctx):
     if len(user_beasts) >= beast_limit:
         embed = discord.Embed(
             title="❌ Beast Inventory Full",
-            description=f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
+            description=
+            f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
 
     # Get a guaranteed legendary beast
-    template = ctx.bot.template_manager.get_random_template_by_rarity(BeastRarity.LEGENDARY)
+    template = ctx.bot.template_manager.get_random_template_by_rarity(
+        BeastRarity.LEGENDARY)
     if not template:
         embed = discord.Embed(
             title="❌ No Legendary Beasts Available",
-            description="No legendary beasts are currently available in the template.",
+            description=
+            "No legendary beasts are currently available in the template.",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -2834,24 +2926,32 @@ async def adopt_legend_beast(ctx):
     # Create success embed
     embed = discord.Embed(
         title="🌟 Legendary Beast Adopted!",
-        description=f"**{ctx.author.display_name}** adopted a guaranteed legendary beast!\n**{beast.name}** {beast.rarity.emoji}",
+        description=
+        f"**{ctx.author.display_name}** adopted a guaranteed legendary beast!\n**{beast.name}** {beast.rarity.emoji}",
         color=beast.rarity.color)
 
     embed.add_field(name="Beast ID", value=f"#{beast_id}", inline=True)
     embed.add_field(name="Rarity", value="⭐⭐⭐⭐⭐ Legendary", inline=True)
     embed.add_field(name="Level", value=beast.stats.level, inline=True)
     embed.add_field(name="Power Level", value=beast.power_level, inline=True)
-    embed.add_field(name="Tendency", value=beast.tendency or "None", inline=True)
-    embed.add_field(name="Location", value=beast.location or "Unknown", inline=True)
+    embed.add_field(name="Tendency",
+                    value=beast.tendency or "None",
+                    inline=True)
+    embed.add_field(name="Location",
+                    value=beast.location or "Unknown",
+                    inline=True)
 
     if beast.description:
-        embed.add_field(name="Description", value=beast.description, inline=False)
+        embed.add_field(name="Description",
+                        value=beast.description,
+                        inline=False)
 
-    embed.add_field(name="✨ Special Privilege", 
-                    value="This was your one-time legendary adoption!", 
+    embed.add_field(name="✨ Special Privilege",
+                    value="This was your one-time legendary adoption!",
                     inline=False)
 
-    embed.set_footer(text=f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit}")
+    embed.set_footer(
+        text=f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit}")
     await ctx.send(embed=embed)
 
 
@@ -2865,7 +2965,7 @@ async def adopt_mythic_beast(ctx):
     # Check if user has personal role permission
     if not ctx.bot.role_manager.can_use_adopt_mythic(user_role):
         embed = discord.Embed(
-            title="❌ Insufficient Permissions", 
+            title="❌ Insufficient Permissions",
             description="You need the personal role to use this command!",
             color=0xFF0000)
         await ctx.send(embed=embed)
@@ -2885,17 +2985,20 @@ async def adopt_mythic_beast(ctx):
     if len(user_beasts) >= beast_limit:
         embed = discord.Embed(
             title="❌ Beast Inventory Full",
-            description=f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
+            description=
+            f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
 
     # Get a guaranteed mythic beast
-    template = ctx.bot.template_manager.get_random_template_by_rarity(BeastRarity.MYTHIC)
+    template = ctx.bot.template_manager.get_random_template_by_rarity(
+        BeastRarity.MYTHIC)
     if not template:
         embed = discord.Embed(
             title="❌ No Mythic Beasts Available",
-            description="No mythic beasts are currently available in the template.",
+            description=
+            "No mythic beasts are currently available in the template.",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -2914,24 +3017,36 @@ async def adopt_mythic_beast(ctx):
     # Create success embed with special styling for mythic
     embed = discord.Embed(
         title="🔥 MYTHIC BEAST ADOPTED! 🔥",
-        description=f"**{ctx.author.display_name}** adopted an ULTRA-RARE mythic beast!\n**{beast.name}** {beast.rarity.emoji}",
+        description=
+        f"**{ctx.author.display_name}** adopted an ULTRA-RARE mythic beast!\n**{beast.name}** {beast.rarity.emoji}",
         color=beast.rarity.color)
 
     embed.add_field(name="Beast ID", value=f"#{beast_id}", inline=True)
     embed.add_field(name="Rarity", value="⭐⭐⭐⭐⭐⭐ MYTHIC", inline=True)
     embed.add_field(name="Level", value=beast.stats.level, inline=True)
     embed.add_field(name="Power Level", value=beast.power_level, inline=True)
-    embed.add_field(name="Tendency", value=beast.tendency or "None", inline=True)
-    embed.add_field(name="Location", value=beast.location or "Unknown", inline=True)
+    embed.add_field(name="Tendency",
+                    value=beast.tendency or "None",
+                    inline=True)
+    embed.add_field(name="Location",
+                    value=beast.location or "Unknown",
+                    inline=True)
 
     if beast.description:
-        embed.add_field(name="Description", value=beast.description, inline=False)
+        embed.add_field(name="Description",
+                        value=beast.description,
+                        inline=False)
 
-    embed.add_field(name="🔥 ULTIMATE PRIVILEGE", 
-                    value="This was your one-time MYTHIC adoption - the rarest of all beasts!", 
-                    inline=False)
+    embed.add_field(
+        name="🔥 ULTIMATE PRIVILEGE",
+        value=
+        "This was your one-time MYTHIC adoption - the rarest of all beasts!",
+        inline=False)
 
-    embed.set_footer(text=f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit} | You own a MYTHIC beast!")
+    embed.set_footer(
+        text=
+        f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit} | You own a MYTHIC beast!"
+    )
     await ctx.send(embed=embed)
 
 
@@ -2949,26 +3064,33 @@ async def adoption_status(ctx):
     # User role info
     role_names = {
         UserRole.NORMAL: "Normal User",
-        UserRole.SPECIAL: "Special Role User", 
+        UserRole.SPECIAL: "Special Role User",
         UserRole.PERSONAL: "Personal Role User"
     }
-    embed.add_field(name="👤 Your Role", value=role_names[user_role], inline=True)
-    embed.add_field(name="📦 Beast Limit", 
-                    value=f"{ctx.bot.role_manager.get_beast_limit(user_role)} beasts", 
+    embed.add_field(name="👤 Your Role",
+                    value=role_names[user_role],
                     inline=True)
+    embed.add_field(
+        name="📦 Beast Limit",
+        value=f"{ctx.bot.role_manager.get_beast_limit(user_role)} beasts",
+        inline=True)
 
     # Regular adoption status
     if user.last_adopt:
         cooldown_hours = ctx.bot.config.adopt_cooldown_hours
         next_adopt = user.last_adopt + datetime.timedelta(hours=cooldown_hours)
         if datetime.datetime.now() < next_adopt:
-            embed.add_field(name="⏰ Next Regular Adopt", 
-                          value=f"<t:{int(next_adopt.timestamp())}:R>", 
-                          inline=False)
+            embed.add_field(name="⏰ Next Regular Adopt",
+                            value=f"<t:{int(next_adopt.timestamp())}:R>",
+                            inline=False)
         else:
-            embed.add_field(name="✅ Regular Adopt", value="Available now!", inline=False)
+            embed.add_field(name="✅ Regular Adopt",
+                            value="Available now!",
+                            inline=False)
     else:
-        embed.add_field(name="✅ Regular Adopt", value="Available now!", inline=False)
+        embed.add_field(name="✅ Regular Adopt",
+                        value="Available now!",
+                        inline=False)
 
     # Special adoptions
     legend_available = ctx.bot.role_manager.can_use_adopt_legend(user_role)
@@ -2977,38 +3099,52 @@ async def adoption_status(ctx):
     # Legend adoption status
     if legend_available:
         legend_status = "❌ Already Used" if user.has_used_adopt_legend else "✅ Available"
-        embed.add_field(name="🌟 Legendary Adoption", value=legend_status, inline=True)
+        embed.add_field(name="🌟 Legendary Adoption",
+                        value=legend_status,
+                        inline=True)
     else:
-        embed.add_field(name="🌟 Legendary Adoption", value="🔒 Requires Special Role", inline=True)
+        embed.add_field(name="🌟 Legendary Adoption",
+                        value="🔒 Requires Special Role",
+                        inline=True)
 
-    # Mythic adoption status  
+    # Mythic adoption status
     if mythic_available:
         mythic_status = "❌ Already Used" if user.has_used_adopt_mythic else "✅ Available"
-        embed.add_field(name="🔥 Mythic Adoption", value=mythic_status, inline=True)
+        embed.add_field(name="🔥 Mythic Adoption",
+                        value=mythic_status,
+                        inline=True)
     else:
-        embed.add_field(name="🔥 Mythic Adoption", value="🔒 Requires Personal Role", inline=True)
+        embed.add_field(name="🔥 Mythic Adoption",
+                        value="🔒 Requires Personal Role",
+                        inline=True)
 
     # Command info
     available_commands = []
-    if not user.last_adopt or datetime.datetime.now() >= user.last_adopt + datetime.timedelta(hours=ctx.bot.config.adopt_cooldown_hours):
-        available_commands.append(f"`{ctx.bot.config.prefix}adopt` - Regular adoption")
+    if not user.last_adopt or datetime.datetime.now(
+    ) >= user.last_adopt + datetime.timedelta(
+            hours=ctx.bot.config.adopt_cooldown_hours):
+        available_commands.append(
+            f"`{ctx.bot.config.prefix}adopt` - Regular adoption")
 
     if legend_available and not user.has_used_adopt_legend:
-        available_commands.append(f"`{ctx.bot.config.prefix}adopt_legend` - Guaranteed legendary")
+        available_commands.append(
+            f"`{ctx.bot.config.prefix}adopt_legend` - Guaranteed legendary")
 
     if mythic_available and not user.has_used_adopt_mythic:
-        available_commands.append(f"`{ctx.bot.config.prefix}adopt_mythic` - Guaranteed mythic")
+        available_commands.append(
+            f"`{ctx.bot.config.prefix}adopt_mythic` - Guaranteed mythic")
 
     if available_commands:
-        embed.add_field(name="🎯 Available Commands", 
-                       value="\n".join(available_commands), 
-                       inline=False)
+        embed.add_field(name="🎯 Available Commands",
+                        value="\n".join(available_commands),
+                        inline=False)
     else:
-        embed.add_field(name="⏸️ No Commands Available", 
-                       value="All adoptions are on cooldown or used", 
-                       inline=False)
+        embed.add_field(name="⏸️ No Commands Available",
+                        value="All adoptions are on cooldown or used",
+                        inline=False)
 
     await ctx.send(embed=embed)
+
 
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
@@ -3114,6 +3250,7 @@ async def catch_beast(ctx):
 
     await ctx.send(embed=embed)
 
+
 # Flask Web Server (to keep Render happy)
 
 app = Flask(__name__)
@@ -3153,7 +3290,9 @@ def run_bot_with_flask():
     # Run Discord bot in main thread
     main()
 
+
 # NEW BACKUP ADMIN COMMANDS - ADD THESE BEFORE def main():
+
 
 @commands.command(name='backupstatus')
 @commands.has_permissions(administrator=True)
@@ -3161,33 +3300,52 @@ async def backup_status(ctx):
     """Check backup storage usage and status"""
     storage_info = ctx.bot.db.get_storage_usage()
 
-    embed = discord.Embed(
-        title="📊 Backup System Status",
-        color=0x00AAFF
-    )
+    embed = discord.Embed(title="📊 Backup System Status", color=0x00AAFF)
 
-    embed.add_field(name="📁 Total Backups", value=storage_info['total_files'], inline=True)
-    embed.add_field(name="💾 Storage Used", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
-    embed.add_field(name="📊 Max Storage", value=f"{ctx.bot.config.backup_max_size_mb} MB", inline=True)
+    embed.add_field(name="📁 Total Backups",
+                    value=storage_info['total_files'],
+                    inline=True)
+    embed.add_field(name="💾 Storage Used",
+                    value=f"{storage_info['total_size_mb']:.1f} MB",
+                    inline=True)
+    embed.add_field(name="📊 Max Storage",
+                    value=f"{ctx.bot.config.backup_max_size_mb} MB",
+                    inline=True)
 
-    embed.add_field(name="⚙️ Backup Enabled", value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No", inline=True)
-    embed.add_field(name="⏰ Interval", value=f"{ctx.bot.config.backup_interval_hours}h", inline=True)
-    embed.add_field(name="🗃️ Retention", value=f"{ctx.bot.config.backup_retention_count} files", inline=True)
+    embed.add_field(name="⚙️ Backup Enabled",
+                    value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No",
+                    inline=True)
+    embed.add_field(name="⏰ Interval",
+                    value=f"{ctx.bot.config.backup_interval_hours}h",
+                    inline=True)
+    embed.add_field(name="🗃️ Retention",
+                    value=f"{ctx.bot.config.backup_retention_count} files",
+                    inline=True)
 
     if storage_info['oldest_backup']:
-        oldest_time = datetime.datetime.fromtimestamp(storage_info['oldest_backup'].stat().st_mtime)
-        embed.add_field(name="📅 Oldest Backup", value=oldest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
+        oldest_time = datetime.datetime.fromtimestamp(
+            storage_info['oldest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Oldest Backup",
+                        value=oldest_time.strftime("%Y-%m-%d %H:%M"),
+                        inline=True)
 
     if storage_info['newest_backup']:
-        newest_time = datetime.datetime.fromtimestamp(storage_info['newest_backup'].stat().st_mtime)
-        embed.add_field(name="📅 Newest Backup", value=newest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
+        newest_time = datetime.datetime.fromtimestamp(
+            storage_info['newest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Newest Backup",
+                        value=newest_time.strftime("%Y-%m-%d %H:%M"),
+                        inline=True)
 
     # Storage warning
-    usage_percent = (storage_info['total_size_mb'] / ctx.bot.config.backup_max_size_mb) * 100
+    usage_percent = (storage_info['total_size_mb'] /
+                     ctx.bot.config.backup_max_size_mb) * 100
     if usage_percent > 80:
-        embed.add_field(name="⚠️ Warning", value=f"Storage usage at {usage_percent:.1f}%", inline=False)
+        embed.add_field(name="⚠️ Warning",
+                        value=f"Storage usage at {usage_percent:.1f}%",
+                        inline=False)
 
     await ctx.send(embed=embed)
+
 
 @commands.command(name='backup')
 @commands.has_permissions(administrator=True)
@@ -3196,38 +3354,41 @@ async def manual_backup(ctx):
     embed = discord.Embed(
         title="🔄 Creating Backup...",
         description="Please wait while the backup is created.",
-        color=0xFFAA00
-    )
+        color=0xFFAA00)
     message = await ctx.send(embed=embed)
 
     try:
-        backup_file = await ctx.bot.db.backup_database(keep_count=ctx.bot.config.backup_retention_count)
+        backup_file = await ctx.bot.db.backup_database(
+            keep_count=ctx.bot.config.backup_retention_count)
         if backup_file:
             embed = discord.Embed(
                 title="✅ Backup Created",
                 description=f"Database backup saved successfully!",
-                color=0x00FF00
-            )
-            embed.add_field(name="📁 File", value=f"`{Path(backup_file).name}`", inline=True)
+                color=0x00FF00)
+            embed.add_field(name="📁 File",
+                            value=f"`{Path(backup_file).name}`",
+                            inline=True)
 
             # Show updated storage info
             storage_info = ctx.bot.db.get_storage_usage()
-            embed.add_field(name="💾 Total Storage", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
-            embed.add_field(name="📊 Total Backups", value=storage_info['total_files'], inline=True)
+            embed.add_field(name="💾 Total Storage",
+                            value=f"{storage_info['total_size_mb']:.1f} MB",
+                            inline=True)
+            embed.add_field(name="📊 Total Backups",
+                            value=storage_info['total_files'],
+                            inline=True)
         else:
             embed = discord.Embed(
                 title="❌ Backup Failed",
                 description="Failed to create backup. Check logs for details.",
-                color=0xFF0000
-            )
+                color=0xFF0000)
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Backup Error",
-            description=f"An error occurred: {str(e)}",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Backup Error",
+                              description=f"An error occurred: {str(e)}",
+                              color=0xFF0000)
 
     await message.edit(embed=embed)
+
 
 @commands.command(name='cleanbackups')
 @commands.has_permissions(administrator=True)
@@ -3237,11 +3398,9 @@ async def clean_backups(ctx, keep_count: int = None):
         keep_count = ctx.bot.config.backup_retention_count
 
     if keep_count < 1:
-        embed = discord.Embed(
-            title="❌ Invalid Count",
-            description="Keep count must be at least 1.",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Invalid Count",
+                              description="Keep count must be at least 1.",
+                              color=0xFF0000)
         await ctx.send(embed=embed)
         return
 
@@ -3250,27 +3409,33 @@ async def clean_backups(ctx, keep_count: int = None):
         await ctx.bot.db._cleanup_old_backups(Path("backups"), keep_count)
         storage_after = ctx.bot.db.get_storage_usage()
 
-        files_removed = storage_before['total_files'] - storage_after['total_files']
-        space_freed = storage_before['total_size_mb'] - storage_after['total_size_mb']
+        files_removed = storage_before['total_files'] - storage_after[
+            'total_files']
+        space_freed = storage_before['total_size_mb'] - storage_after[
+            'total_size_mb']
 
-        embed = discord.Embed(
-            title="🧹 Backup Cleanup Complete",
-            color=0x00FF00
-        )
-        embed.add_field(name="🗑️ Files Removed", value=files_removed, inline=True)
-        embed.add_field(name="💾 Space Freed", value=f"{space_freed:.1f} MB", inline=True)
-        embed.add_field(name="📁 Files Remaining", value=storage_after['total_files'], inline=True)
+        embed = discord.Embed(title="🧹 Backup Cleanup Complete",
+                              color=0x00FF00)
+        embed.add_field(name="🗑️ Files Removed",
+                        value=files_removed,
+                        inline=True)
+        embed.add_field(name="💾 Space Freed",
+                        value=f"{space_freed:.1f} MB",
+                        inline=True)
+        embed.add_field(name="📁 Files Remaining",
+                        value=storage_after['total_files'],
+                        inline=True)
 
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Cleanup Failed",
-            description=f"Error during cleanup: {str(e)}",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Cleanup Failed",
+                              description=f"Error during cleanup: {str(e)}",
+                              color=0xFF0000)
 
     await ctx.send(embed=embed)
 
+
 # In your main() function, add these two lines with the other bot.add_command() calls:
+
 
 def main():
     """Main entry point"""
@@ -3308,8 +3473,8 @@ def main():
     bot.add_command(clean_backups)
 
     # ADD THESE NEW HEAL COMMANDS:
-    bot.add_command(heal_beast)        # !heal command
-    bot.add_command(heal_all_beasts)   # !healall command
+    bot.add_command(heal_beast)  # !heal command
+    bot.add_command(heal_all_beasts)  # !healall command
 
     try:
         bot.run(config.token)
@@ -3318,12 +3483,12 @@ def main():
     except Exception as e:
         print(f"Error running bot: {e}")
 
+
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
         run_bot_with_flask()
     else:  # Running locally
         main()
-
 
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
