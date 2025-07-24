@@ -34,12 +34,11 @@ class BotConfig(BaseModel):
     """Bot configuration with validation"""
     token: str = Field(..., description="Discord bot token")
     prefix: str = Field(default="!", description="Command prefix")
-    database_path: str = Field(default="data/immortal_beasts.db",
-                               description="Database file path")
-    backup_interval_hours: int = Field(default=6,
-                                       ge=1,
-                                       le=24,
-                                       description="Backup interval in hours")
+    database_path: str = Field(default="data/immortal_beasts.db", description="Database file path")
+    backup_interval_hours: int = Field(default=6, ge=1, le=24, description="Backup interval in hours")
+    backup_retention_count: int = Field(default=10, ge=1, le=100, description="Number of backups to retain")
+    backup_max_size_mb: int = Field(default=100, ge=10, le=1000, description="Maximum total backup size in MB")
+    backup_enabled: bool = Field(default=True, description="Enable/disable automatic backups")
     spawn_interval_min: int = Field(
         default=15,
         ge=5,
@@ -157,23 +156,33 @@ class BotConfig(BaseModel):
                 if channel_id.strip()
             ]
 
+        # Determine backup settings based on environment
+        if os.getenv('PORT'):  # Production
+            backup_retention = 3  # Keep only 3 backups in production
+            backup_interval = 12  # Backup twice daily
+        else:  # Development
+            backup_retention = 10  # Keep 10 backups locally
+            backup_interval = 6   # Backup every 6 hours
+
         return cls(
             token=token,
             prefix=os.getenv('BOT_PREFIX', '!'),
             database_path='/tmp/immortal_beasts.db',  # Use /tmp for Render
             special_role_ids=special_role_ids,
-            personal_role_id=int(
-                os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
+            personal_role_id=int(os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
             xp_chat_channel_ids=xp_channel_ids,
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
-            backup_interval_hours=int(os.getenv('BACKUP_INTERVAL_HOURS', '6')),
+            backup_interval_hours=int(os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
+            backup_retention_count=int(os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
+            backup_max_size_mb=int(os.getenv('BACKUP_MAX_SIZE_MB', '100')),
+            backup_enabled=os.getenv('BACKUP_ENABLED', 'true').lower() == 'true',
             spawn_interval_min=int(os.getenv('SPAWN_INTERVAL_MIN', '15')),
             spawn_interval_max=int(os.getenv('SPAWN_INTERVAL_MAX', '45')),
             xp_per_message=int(os.getenv('XP_PER_MESSAGE', '5')),
             xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '60')),
-            starting_beast_stones=int(
-                os.getenv('STARTING_BEAST_STONES', '1000')),
-            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')))
+            starting_beast_stones=int(os.getenv('STARTING_BEAST_STONES', '1000')),
+            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48'))
+        )
 
 
 # ============================================================================
@@ -807,20 +816,65 @@ class SQLiteDatabase(DatabaseInterface):
             logging.error(f"Failed to delete beast {beast_id}: {e}")
             return False
 
-    async def backup_database(self,
-                              backup_dir: str = "backups") -> Optional[str]:
-        """Create database backup"""
+    async def backup_database(self, backup_dir: str = "backups", keep_count: int = 10) -> Optional[str]:
+        """Create database backup with automatic cleanup"""
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
+
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_file = backup_path / f"backup_{timestamp}.db"
+
         try:
+            # Create new backup
             shutil.copy2(self.db_path, backup_file)
             logging.info(f"Database backup created: {backup_file}")
+
+            # Clean up old backups - keep only latest N
+            await self._cleanup_old_backups(backup_path, keep_count)
+
             return str(backup_file)
         except Exception as e:
             logging.error(f"Backup failed: {e}")
             return None
+
+    async def _cleanup_old_backups(self, backup_path: Path, keep_count: int):
+        """Remove old backup files, keeping only the latest ones"""
+        try:
+            # Get all backup files sorted by creation time (newest first)
+            backup_files = sorted(
+                backup_path.glob("backup_*.db"), 
+                key=lambda p: p.stat().st_mtime, 
+                reverse=True
+            )
+
+            # Remove old backups beyond keep_count
+            removed_count = 0
+            for old_backup in backup_files[keep_count:]:
+                old_backup.unlink()
+                removed_count += 1
+                logging.info(f"Removed old backup: {old_backup}")
+
+            if removed_count > 0:
+                logging.info(f"Cleaned up {removed_count} old backup files")
+
+        except Exception as e:
+            logging.error(f"Backup cleanup failed: {e}")
+
+    def get_storage_usage(self, backup_dir: str = "backups") -> Dict[str, Any]:
+        """Get current backup storage usage"""
+        backup_path = Path(backup_dir)
+        if not backup_path.exists():
+            return {'total_files': 0, 'total_size_mb': 0, 'oldest_backup': None, 'newest_backup': None}
+
+        backup_files = list(backup_path.glob("backup_*.db"))
+        total_size = sum(f.stat().st_size for f in backup_files)
+
+        return {
+            'total_files': len(backup_files),
+            'total_size_mb': total_size / (1024 * 1024),
+            'oldest_backup': min(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
+            'newest_backup': max(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
+        }
 
 
 # ============================================================================
@@ -1189,7 +1243,16 @@ class ImmortalBeastsBot(commands.Bot):
         """Setup hook called when bot starts"""
         await self.db.initialize()
         self.logger.info("Database initialized")
-        self.backup_task.start()
+
+        # Update backup task interval based on config
+        self.backup_task.change_interval(hours=self.config.backup_interval_hours)
+
+        if self.config.backup_enabled:
+            self.backup_task.start()
+            self.logger.info(f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})")
+        else:
+            self.logger.info("Backup task disabled")
+
         self.spawn_task.start()
         self.logger.info("Background tasks started")
 
@@ -1318,11 +1381,27 @@ class ImmortalBeastsBot(commands.Bot):
             await self.db.create_user(user)
         return user
 
-    @tasks.loop(hours=6)
+    @tasks.loop(hours=6)  # This will be updated in setup_hook
     async def backup_task(self):
-        """Regular database backup"""
+        """Enhanced backup task with monitoring"""
+        if not self.config.backup_enabled:
+            return
+
         try:
-            await self.db.backup_database()
+            # Check current backup storage usage
+            storage_info = self.db.get_storage_usage()
+
+            if storage_info['total_size_mb'] > self.config.backup_max_size_mb:
+                self.logger.warning(f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB")
+                # Force additional cleanup
+                await self.db._cleanup_old_backups(Path("backups"), self.config.backup_retention_count // 2)
+
+            # Create new backup with retention
+            backup_file = await self.db.backup_database(keep_count=self.config.backup_retention_count)
+
+            if backup_file:
+                self.logger.info(f"Backup completed: {backup_file}")
+
         except Exception as e:
             self.logger.error(f"Backup task failed: {e}")
 
@@ -2041,6 +2120,130 @@ def run_bot_with_flask():
     main()
 
 
+# ============================================================================
+# NEW BACKUP ADMIN COMMANDS - ADD THESE BEFORE def main():
+# ============================================================================
+
+@commands.command(name='backupstatus')
+@commands.has_permissions(administrator=True)
+async def backup_status(ctx):
+    """Check backup storage usage and status"""
+    storage_info = ctx.bot.db.get_storage_usage()
+
+    embed = discord.Embed(
+        title="📊 Backup System Status",
+        color=0x00AAFF
+    )
+
+    embed.add_field(name="📁 Total Backups", value=storage_info['total_files'], inline=True)
+    embed.add_field(name="💾 Storage Used", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
+    embed.add_field(name="📊 Max Storage", value=f"{ctx.bot.config.backup_max_size_mb} MB", inline=True)
+
+    embed.add_field(name="⚙️ Backup Enabled", value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No", inline=True)
+    embed.add_field(name="⏰ Interval", value=f"{ctx.bot.config.backup_interval_hours}h", inline=True)
+    embed.add_field(name="🗃️ Retention", value=f"{ctx.bot.config.backup_retention_count} files", inline=True)
+
+    if storage_info['oldest_backup']:
+        oldest_time = datetime.datetime.fromtimestamp(storage_info['oldest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Oldest Backup", value=oldest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
+
+    if storage_info['newest_backup']:
+        newest_time = datetime.datetime.fromtimestamp(storage_info['newest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Newest Backup", value=newest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
+
+    # Storage warning
+    usage_percent = (storage_info['total_size_mb'] / ctx.bot.config.backup_max_size_mb) * 100
+    if usage_percent > 80:
+        embed.add_field(name="⚠️ Warning", value=f"Storage usage at {usage_percent:.1f}%", inline=False)
+
+    await ctx.send(embed=embed)
+
+@commands.command(name='backup')
+@commands.has_permissions(administrator=True)
+async def manual_backup(ctx):
+    """Create a manual backup"""
+    embed = discord.Embed(
+        title="🔄 Creating Backup...",
+        description="Please wait while the backup is created.",
+        color=0xFFAA00
+    )
+    message = await ctx.send(embed=embed)
+
+    try:
+        backup_file = await ctx.bot.db.backup_database(keep_count=ctx.bot.config.backup_retention_count)
+        if backup_file:
+            embed = discord.Embed(
+                title="✅ Backup Created",
+                description=f"Database backup saved successfully!",
+                color=0x00FF00
+            )
+            embed.add_field(name="📁 File", value=f"`{Path(backup_file).name}`", inline=True)
+
+            # Show updated storage info
+            storage_info = ctx.bot.db.get_storage_usage()
+            embed.add_field(name="💾 Total Storage", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
+            embed.add_field(name="📊 Total Backups", value=storage_info['total_files'], inline=True)
+        else:
+            embed = discord.Embed(
+                title="❌ Backup Failed",
+                description="Failed to create backup. Check logs for details.",
+                color=0xFF0000
+            )
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Backup Error",
+            description=f"An error occurred: {str(e)}",
+            color=0xFF0000
+        )
+
+    await message.edit(embed=embed)
+
+@commands.command(name='cleanbackups')
+@commands.has_permissions(administrator=True)
+async def clean_backups(ctx, keep_count: int = None):
+    """Clean old backups manually"""
+    if keep_count is None:
+        keep_count = ctx.bot.config.backup_retention_count
+
+    if keep_count < 1:
+        embed = discord.Embed(
+            title="❌ Invalid Count",
+            description="Keep count must be at least 1.",
+            color=0xFF0000
+        )
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        storage_before = ctx.bot.db.get_storage_usage()
+        await ctx.bot.db._cleanup_old_backups(Path("backups"), keep_count)
+        storage_after = ctx.bot.db.get_storage_usage()
+
+        files_removed = storage_before['total_files'] - storage_after['total_files']
+        space_freed = storage_before['total_size_mb'] - storage_after['total_size_mb']
+
+        embed = discord.Embed(
+            title="🧹 Backup Cleanup Complete",
+            color=0x00FF00
+        )
+        embed.add_field(name="🗑️ Files Removed", value=files_removed, inline=True)
+        embed.add_field(name="💾 Space Freed", value=f"{space_freed:.1f} MB", inline=True)
+        embed.add_field(name="📁 Files Remaining", value=storage_after['total_files'], inline=True)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Cleanup Failed",
+            description=f"Error during cleanup: {str(e)}",
+            color=0xFF0000
+        )
+
+    await ctx.send(embed=embed)
+
+
+# ============================================================================
+# MAIN FUNCTION - REPLACE YOUR ENTIRE main() FUNCTION WITH THIS
+# ============================================================================
+
 def main():
     """Main entry point"""
     try:
@@ -2067,12 +2270,28 @@ def main():
     bot.add_command(show_balance)
     bot.add_command(battle_command)
 
+    # NEW: Add backup admin commands
+    bot.add_command(backup_status)
+    bot.add_command(manual_backup)
+    bot.add_command(clean_backups)
+
     try:
         bot.run(config.token)
     except discord.LoginFailure:
         print("Invalid bot token. Please check your configuration.")
     except Exception as e:
         print(f"Error running bot: {e}")
+
+
+# ============================================================================
+# KEEP YOUR EXISTING BOTTOM CODE (if __name__ == "__main__":)
+# ============================================================================
+
+if __name__ == "__main__":
+    if os.getenv('PORT'):  # Running on Render
+        run_bot_with_flask()
+    else:  # Running locally
+        main()
 
 
 if __name__ == "__main__":
