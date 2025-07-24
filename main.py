@@ -34,11 +34,21 @@ class BotConfig(BaseModel):
     """Bot configuration with validation"""
     token: str = Field(..., description="Discord bot token")
     prefix: str = Field(default="!", description="Command prefix")
-    database_path: str = Field(default="data/immortal_beasts.db", description="Database file path")
-    backup_interval_hours: int = Field(default=6, ge=1, le=24, description="Backup interval in hours")
-    backup_retention_count: int = Field(default=10, ge=1, le=100, description="Number of backups to retain")
-    backup_max_size_mb: int = Field(default=100, ge=10, le=1000, description="Maximum total backup size in MB")
-    backup_enabled: bool = Field(default=True, description="Enable/disable automatic backups")
+    database_path: str = Field(default="data/immortal_beasts.db",
+                               description="Database file path")
+    backup_interval_hours: int = Field(default=6,
+                                       ge=1,
+                                       le=24,
+                                       description="Backup interval in hours")
+    backup_retention_count: int = Field(
+        default=10, ge=1, le=100, description="Number of backups to retain")
+    backup_max_size_mb: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Maximum total backup size in MB")
+    backup_enabled: bool = Field(
+        default=True, description="Enable/disable automatic backups")
     spawn_interval_min: int = Field(
         default=15,
         ge=5,
@@ -162,27 +172,31 @@ class BotConfig(BaseModel):
             backup_interval = 12  # Backup twice daily
         else:  # Development
             backup_retention = 10  # Keep 10 backups locally
-            backup_interval = 6   # Backup every 6 hours
+            backup_interval = 6  # Backup every 6 hours
 
         return cls(
             token=token,
             prefix=os.getenv('BOT_PREFIX', '!'),
             database_path='/tmp/immortal_beasts.db',  # Use /tmp for Render
             special_role_ids=special_role_ids,
-            personal_role_id=int(os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
+            personal_role_id=int(
+                os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
             xp_chat_channel_ids=xp_channel_ids,
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
-            backup_interval_hours=int(os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
-            backup_retention_count=int(os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
+            backup_interval_hours=int(
+                os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
+            backup_retention_count=int(
+                os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
             backup_max_size_mb=int(os.getenv('BACKUP_MAX_SIZE_MB', '100')),
-            backup_enabled=os.getenv('BACKUP_ENABLED', 'true').lower() == 'true',
+            backup_enabled=os.getenv('BACKUP_ENABLED',
+                                     'true').lower() == 'true',
             spawn_interval_min=int(os.getenv('SPAWN_INTERVAL_MIN', '15')),
             spawn_interval_max=int(os.getenv('SPAWN_INTERVAL_MAX', '45')),
             xp_per_message=int(os.getenv('XP_PER_MESSAGE', '5')),
             xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '60')),
-            starting_beast_stones=int(os.getenv('STARTING_BEAST_STONES', '1000')),
-            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48'))
-        )
+            starting_beast_stones=int(
+                os.getenv('STARTING_BEAST_STONES', '1000')),
+            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')))
 
 
 # ============================================================================
@@ -439,16 +453,15 @@ class BeastStats:
         return self.hp - old_hp
 
 
-@dataclass
-class BeastTemplate:
-    """Template for creating new beasts"""
-    name: str
-    rarity: BeastRarity
-    tendency: str
-    location: str
-    base_hp_range: Tuple[int, int]
-    base_attack_range: Tuple[int, int]
-    description: str = ""
+    @dataclass
+    class BeastTemplate:
+        """Template for creating new beasts"""
+        name: str
+        rarity: BeastRarity
+        tendency: str
+        base_hp_range: Tuple[int, int]
+        base_attack_range: Tuple[int, int]
+        description: str = ""
 
     def create_beast(self) -> 'Beast':
         """Create a new beast instance from this template"""
@@ -463,25 +476,22 @@ class BeastTemplate:
                            speed=random.randint(10, 50))
 
         return Beast(name=self.name,
-                     rarity=self.rarity,
-                     tendency=self.tendency,
-                     location=self.location,
-                     stats=stats,
-                     description=self.description)
-
+             rarity=self.rarity,
+             tendency=self.tendency,
+             stats=stats,
+             description=self.description)
 
 @dataclass
 class Beast:
-    """Main beast class"""
-    name: str
-    rarity: BeastRarity
-    tendency: str
-    location: str
-    stats: BeastStats
-    description: str = ""
-    caught_at: datetime.datetime = None
-    owner_id: int = None
-    unique_id: str = None
+        """Main beast class"""
+        name: str
+        rarity: BeastRarity
+        tendency: str
+        stats: BeastStats
+        description: str = ""
+        caught_at: datetime.datetime = None
+        owner_id: int = None
+        unique_id: str = None
 
     def __post_init__(self):
         if self.caught_at is None:
@@ -495,7 +505,6 @@ class Beast:
             'name': self.name,
             'rarity': self.rarity.value,
             'tendency': self.tendency,
-            'location': self.location,
             'stats': asdict(self.stats),
             'description': self.description,
             'caught_at': self.caught_at.isoformat(),
@@ -508,15 +517,14 @@ class Beast:
         """Create beast from dictionary"""
         stats = BeastStats(**data['stats'])
         return cls(name=data['name'],
-                   rarity=BeastRarity(data['rarity']),
-                   tendency=data['tendency'],
-                   location=data['location'],
-                   stats=stats,
-                   description=data.get('description', ''),
-                   caught_at=datetime.datetime.fromisoformat(
-                       data['caught_at']),
-                   owner_id=data.get('owner_id'),
-                   unique_id=data.get('unique_id'))
+               rarity=BeastRarity(data['rarity']),
+               tendency=data['tendency'],
+               stats=stats,
+               description=data.get('description', ''),
+               caught_at=datetime.datetime.fromisoformat(
+                   data['caught_at']),
+               owner_id=data.get('owner_id'),
+               unique_id=data.get('unique_id'))
 
     @property
     def power_level(self) -> int:
@@ -816,7 +824,9 @@ class SQLiteDatabase(DatabaseInterface):
             logging.error(f"Failed to delete beast {beast_id}: {e}")
             return False
 
-    async def backup_database(self, backup_dir: str = "backups", keep_count: int = 10) -> Optional[str]:
+    async def backup_database(self,
+                              backup_dir: str = "backups",
+                              keep_count: int = 10) -> Optional[str]:
         """Create database backup with automatic cleanup"""
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
@@ -841,11 +851,9 @@ class SQLiteDatabase(DatabaseInterface):
         """Remove old backup files, keeping only the latest ones"""
         try:
             # Get all backup files sorted by creation time (newest first)
-            backup_files = sorted(
-                backup_path.glob("backup_*.db"), 
-                key=lambda p: p.stat().st_mtime, 
-                reverse=True
-            )
+            backup_files = sorted(backup_path.glob("backup_*.db"),
+                                  key=lambda p: p.stat().st_mtime,
+                                  reverse=True)
 
             # Remove old backups beyond keep_count
             removed_count = 0
@@ -864,16 +872,27 @@ class SQLiteDatabase(DatabaseInterface):
         """Get current backup storage usage"""
         backup_path = Path(backup_dir)
         if not backup_path.exists():
-            return {'total_files': 0, 'total_size_mb': 0, 'oldest_backup': None, 'newest_backup': None}
+            return {
+                'total_files': 0,
+                'total_size_mb': 0,
+                'oldest_backup': None,
+                'newest_backup': None
+            }
 
         backup_files = list(backup_path.glob("backup_*.db"))
         total_size = sum(f.stat().st_size for f in backup_files)
 
         return {
-            'total_files': len(backup_files),
-            'total_size_mb': total_size / (1024 * 1024),
-            'oldest_backup': min(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
-            'newest_backup': max(backup_files, key=lambda f: f.stat().st_mtime) if backup_files else None,
+            'total_files':
+            len(backup_files),
+            'total_size_mb':
+            total_size / (1024 * 1024),
+            'oldest_backup':
+            min(backup_files, key=lambda f: f.stat().st_mtime)
+            if backup_files else None,
+            'newest_backup':
+            max(backup_files, key=lambda f: f.stat().st_mtime)
+            if backup_files else None,
         }
 
 
@@ -999,7 +1018,6 @@ class BeastTemplateManager:
                         name=name,
                         rarity=BeastRarity(template_data['rarity']),
                         tendency=template_data['tendency'],
-                        location=template_data['location'],
                         base_hp_range=tuple(template_data['base_hp_range']),
                         base_attack_range=tuple(
                             template_data['base_attack_range']),
@@ -1013,67 +1031,498 @@ class BeastTemplateManager:
             self._create_default_templates()
 
     def _create_default_templates(self):
-        """Create default beast templates"""
-        default_data = {
+        """Create expanded beast templates with much more variety"""
+        expanded_beast_data = {
+            # COMMON BEASTS (★)
             "Flood Dragonling": {
                 "rarity": 1,
                 "tendency": "n/a",
-                "location": "Fire",
                 "base_hp_range": [80, 120],
                 "base_attack_range": [15, 25],
                 "description": "A young dragon with control over floods"
             },
+
+            # UNCOMMON BEASTS (★★)
             "Shenghuang": {
                 "rarity": 2,
                 "tendency": "n/a",
-                "location": "Heaven Mountain",
                 "base_hp_range": [120, 180],
                 "base_attack_range": [25, 35],
                 "description": "A celestial phoenix of divine nature"
             },
+            "Pi Xiu": {
+                "rarity": 2,
+                "tendency": "n/a",
+                "base_hp_range": [110, 170],
+                "base_attack_range": [20, 30],
+                "description": "A mystical creature that brings wealth and fortune"
+            },
+            "Chi Wen": {
+                "rarity": 2,
+                "tendency": "n/a",
+                "base_hp_range": [130, 190],
+                "base_attack_range": [28, 38],
+                "description": "A dragon son known for its love of water"
+            },
+            "Bi'an": {
+                "rarity": 2,
+                "tendency": "n/a",
+                "base_hp_range": [125, 175],
+                "base_attack_range": [24, 34],
+                "description": "A righteous dragon son that judges fairly"
+            },
+
+            # RARE BEASTS (★★★)
+            "Red Phoenix": {
+                "rarity": 3,
+                "tendency": "Divine Ephor or Tai Bai +8%",
+                "base_hp_range": [180, 250],
+                "base_attack_range": [35, 50],
+                "description": "A fiery phoenix of immense power"
+            },
+            "Azure Phoenix": {
+                "rarity": 3,
+                "tendency": "Fu Xi or Yandi +8%",
+                "base_hp_range": [190, 260],
+                "base_attack_range": [38, 53],
+                "description": "A blue phoenix of ancient wisdom"
+            },
+            "Bai Ze": {
+                "rarity": 3,
+                "tendency": "Dragon Princess or Princess Longji +8%",
+                "base_hp_range": [200, 270],
+                "base_attack_range": [40, 55],
+                "description": "A mystical beast of knowledge and prophecy"
+            },
+            "Xie Zhi": {
+                "rarity": 3,
+                "tendency": "Ne Zha, Yang Jian, or Xing Tian +8%",
+                "base_hp_range": [185, 255],
+                "base_attack_range": [36, 51],
+                "description": "A unicorn-like beast that detects truth and lies"
+            },
+            "Nine Tails": {
+                "rarity": 3,
+                "tendency": "Yao Ji, Da Ji, or Lord TongTian +8%",
+                "base_hp_range": [175, 245],
+                "base_attack_range": [42, 57],
+                "description": "A fox spirit with nine magnificent tails"
+            },
+            "Shen Pan": {
+                "rarity": 3,
+                "tendency": "n/a",
+                "base_hp_range": [195, 265],
+                "base_attack_range": [37, 52],
+                "description": "Divine judgment beast - starter choice"
+            },
+            "Tian Hun": {
+                "rarity": 3,
+                "tendency": "n/a",
+                "base_hp_range": [180, 250],
+                "base_attack_range": [39, 54],
+                "description": "Heavenly soul beast - starter choice"
+            },
+            "Bi Xin": {
+                "rarity": 3,
+                "tendency": "n/a",
+                "base_hp_range": [185, 255],
+                "base_attack_range": [38, 53],
+                "description": "Heart protection beast - starter choice"
+            },
+            "Snow": {
+                "rarity": 3,
+                "tendency": "n/a",
+                "base_hp_range": [170, 240],
+                "base_attack_range": [35, 50],
+                "description": "A beast of eternal winter - starter choice"
+            },
             "Shadow Monster": {
                 "rarity": 3,
                 "tendency": "n/a",
-                "location": "Tai Di Event",
                 "base_hp_range": [180, 250],
                 "base_attack_range": [35, 50],
                 "description": "A creature born from pure shadow"
             },
+            "Cyan Phoenix": {
+                "rarity": 3,
+                "tendency": "n/a",
+                "base_hp_range": [185, 255],
+                "base_attack_range": [37, 52],
+                "description": "A phoenix of cyan flames and mystery"
+            },
+
+            # EPIC BEASTS (★★★★)
+            "Kyrin": {
+                "rarity": 4,
+                "tendency": "Eastern Immortal +12%",
+                "base_hp_range": [300, 450],
+                "base_attack_range": [60, 90],
+                "description": "A majestic unicorn of the eastern realms"
+            },
             "Azure Dragon": {
                 "rarity": 4,
                 "tendency": "Primordial Land +12%",
-                "location": "Heaven Space Palace",
-                "base_hp_range": [300, 450],
-                "base_attack_range": [60, 90],
+                "base_hp_range": [320, 470],
+                "base_attack_range": [65, 95],
                 "description": "A mighty dragon of the eastern skies"
+            },
+            "Jiu Ying": {
+                "rarity": 4,
+                "tendency": "Skyshine Continent +12%",
+                "base_hp_range": [310, 460],
+                "base_attack_range": [62, 92],
+                "description": "A nine-headed serpent of ancient power"
+            },
+            "Zhu Yan": {
+                "rarity": 4,
+                "tendency": "Deification Domain +12%",
+                "base_hp_range": [330, 480],
+                "base_attack_range": [68, 98],
+                "description": "A fire ape that brings war and conflict"
+            },
+            "Hell Steed": {
+                "rarity": 4,
+                "tendency": "Heaven Palace +12%",
+                "base_hp_range": [340, 490],
+                "base_attack_range": [70, 100],
+                "description": "A demonic horse from the underworld"
+            },
+            "Yuan Chu": {
+                "rarity": 4,
+                "tendency": "Heaven Palace +12%",
+                "base_hp_range": [350, 500],
+                "base_attack_range": [72, 102],
+                "description": "The primordial beginning beast"
+            },
+            "Jue Ru": {
+                "rarity": 4,
+                "tendency": "Luo Shen, Shi Ji, Xi He, or Queen Mother +12%",
+                "base_hp_range": [325, 475],
+                "base_attack_range": [67, 97],
+                "description": "A beast of absolute determination"
+            },
+            "Monster Nian": {
+                "rarity": 4,
+                "tendency": "Deification Domain +12%",
+                "base_hp_range": [315, 465],
+                "base_attack_range": [63, 93],
+                "description": "The legendary New Year monster"
+            },
+            "Love Bird": {
+                "rarity": 4,
+                "tendency": "Skyshine Continent +12%",
+                "base_hp_range": [290, 440],
+                "base_attack_range": [58, 88],
+                "description": "A pair of birds representing eternal love"
+            },
+            "Phoenix": {
+                "rarity": 4,
+                "tendency": "Primordial Land +12%",
+                "base_hp_range": [345, 495],
+                "base_attack_range": [71, 101],
+                "description": "The immortal fire bird of rebirth"
+            },
+            "Qing Yuan": {
+                "rarity": 4,
+                "tendency": "Eastern Immortal +12%",
+                "base_hp_range": [335, 485],
+                "base_attack_range": [69, 99],
+                "description": "A beast of pure celestial energy"
+            },
+            "Devour": {
+                "rarity": 4,
+                "tendency": "Deification Domain +12%",
+                "base_hp_range": [360, 510],
+                "base_attack_range": [74, 104],
+                "description": "A beast that devours all in its path"
+            },
+            "Thunder": {
+                "rarity": 4,
+                "tendency": "Skyshine Continent +12%",
+                "base_hp_range": [305, 455],
+                "base_attack_range": [61, 91],
+                "description": "A beast born from lightning and storms"
+            },
+            "Fly Dragon": {
+                "rarity": 4,
+                "tendency": "Primordial Land +12%",
+                "base_hp_range": [320, 470],
+                "base_attack_range": [65, 95],
+                "description": "A dragon that soars through the heavens"
+            },
+            "Koi": {
+                "rarity": 4,
+                "tendency": "Eastern Immortal +12%",
+                "base_hp_range": [280, 430],
+                "base_attack_range": [56, 86],
+                "description": "A carp that transforms into a dragon"
+            },
+            "Picapica": {
+                "rarity": 4,
+                "tendency": "Deification Domain +12%",
+                "base_hp_range": [295, 445],
+                "base_attack_range": [59, 89],
+                "description": "A mysterious beast of unknown origin"
+            },
+            "Greenbull": {
+                "rarity": 4,
+                "tendency": "Skyshine Continent +12%",
+                "base_hp_range": [370, 520],
+                "base_attack_range": [76, 106],
+                "description": "A powerful bull with emerald hide"
+            },
+            "Jade Rabbit": {
+                "rarity": 4,
+                "tendency": "Eastern Immortal +12%",
+                "base_hp_range": [270, 420],
+                "base_attack_range": [54, 84],
+                "description": "The moon goddess's faithful companion"
+            },
+            "Dragon Horse": {
+                "rarity": 4,
+                "tendency": "Deification Domain +12%",
+                "base_hp_range": [355, 505],
+                "base_attack_range": [73, 103],
+                "description": "A horse with the soul of a dragon"
+            },
+            "Black Kyrin": {
+                "rarity": 4,
+                "tendency": "Primordial Land +12%",
+                "base_hp_range": [340, 490],
+                "base_attack_range": [70, 100],
+                "description": "A dark unicorn of immense power"
+            },
+            "Reindeer": {
+                "rarity": 4,
+                "tendency": "Skyshine Continent +12%",
+                "base_hp_range": [285, 435],
+                "base_attack_range": [57, 87],
+                "description": "A magical reindeer from the frozen peaks"
+            },
+            "Panda": {
+                "rarity": 4,
+                "tendency": "Primordial Land +12%",
+                "base_hp_range": [365, 515],
+                "base_attack_range": [75, 105],
+                "description": "A gentle giant with hidden strength"
+            },
+            "Shadow Lord": {
+                "rarity": 4,
+                "tendency": "Skyshine Continent +12%",
+                "base_hp_range": [350, 500],
+                "base_attack_range": [72, 102],
+                "description": "Master of shadows and darkness"
+            },
+            "Elephant": {
+                "rarity": 4,
+                "tendency": "Deification Domain +12%",
+                "base_hp_range": [380, 530],
+                "base_attack_range": [78, 108],
+                "description": "A colossal elephant of divine wisdom"
+            },
+            "Sky Phoenix": {
+                "rarity": 4,
+                "tendency": "Eastern Immortal +12%",
+                "base_hp_range": [330, 480],
+                "base_attack_range": [68, 98],
+                "description": "A phoenix that rules the celestial skies"
+            },
+
+            # LEGENDARY BEASTS (★★★★★)
+            "Heavenly Kun": {
+                "rarity": 5,
+                "tendency": "Luo Shen, Shi Ji, Xi He, or Queen Mother +15%",
+                "base_hp_range": [500, 700],
+                "base_attack_range": [100, 140],
+                "description": "A massive fish that transforms into a bird"
+            },
+            "Nine-Hell Steed": {
+                "rarity": 5,
+                "tendency": "Heaven Palace +15%",
+                "base_hp_range": [520, 720],
+                "base_attack_range": [105, 145],
+                "description": "A demonic horse from the nine hells"
+            },
+            "Tien Yuanchu": {
+                "rarity": 5,
+                "tendency": "Heaven Palace +15%",
+                "base_hp_range": [540, 740],
+                "base_attack_range": [110, 150],
+                "description": "The celestial primordial beginning"
+            },
+            "Snowy Jue Ru": {
+                "rarity": 5,
+                "tendency": "Luo Shen, Shi Ji, Xi He, or Queen Mother +15%",
+                "base_hp_range": [510, 710],
+                "base_attack_range": [102, 142],
+                "description": "A winter variant of absolute determination"
+            },
+            "Immortal Eater": {
+                "rarity": 5,
+                "tendency": "Deification Domain +15%",
+                "base_hp_range": [580, 780],
+                "base_attack_range": [118, 158],
+                "description": "A terrifying beast that devours immortals"
+            },
+            "Queen Bird": {
+                "rarity": 5,
+                "tendency": "Skyshine Continent +15%",
+                "base_hp_range": [480, 680],
+                "base_attack_range": [96, 136],
+                "description": "The sovereign of all winged creatures"
+            },
+            "Deity Phoenix": {
+                "rarity": 5,
+                "tendency": "Primordial Land +15%",
+                "base_hp_range": [560, 760],
+                "base_attack_range": [115, 155],
+                "description": "A phoenix that has achieved godhood"
+            },
+            "Deity Qing Yuan": {
+                "rarity": 5,
+                "tendency": "Eastern Immortal +15%",
+                "base_hp_range": [530, 730],
+                "base_attack_range": [108, 148],
+                "description": "A divine beast of pure celestial essence"
+            },
+            "Dark Devourer": {
+                "rarity": 5,
+                "tendency": "Deification Domain +15%",
+                "base_hp_range": [570, 770],
+                "base_attack_range": [116, 156],
+                "description": "A dark entity that consumes all light"
+            },
+            "Purple Thunder": {
+                "rarity": 5,
+                "tendency": "Skyshine Continent +15%",
+                "base_hp_range": [490, 690],
+                "base_attack_range": [98, 138],
+                "description": "A beast of purple lightning and storms"
+            },
+            "Lucky Fly Dragon": {
+                "rarity": 5,
+                "tendency": "Primordial Land +15%",
+                "base_hp_range": [520, 720],
+                "base_attack_range": [105, 145],
+                "description": "A fortune-bringing celestial dragon"
+            },
+            "King Koi": {
+                "rarity": 5,
+                "tendency": "Eastern Immortal +15%",
+                "base_hp_range": [470, 670],
+                "base_attack_range": [94, 134],
+                "description": "The emperor of all carp"
+            },
+            "Star Picapica": {
+                "rarity": 5,
+                "tendency": "Deification Domain +15%",
+                "base_hp_range": [485, 685],
+                "base_attack_range": [97, 137],
+                "description": "A stellar variant of the mysterious beast"
             },
             "Qing Greenbull": {
                 "rarity": 5,
                 "tendency": "Skyshine Continent +15%",
-                "location": "Mystic Forest",
-                "base_hp_range": [500, 700],
-                "base_attack_range": [100, 140],
+                "base_hp_range": [590, 790],
+                "base_attack_range": [120, 160],
                 "description": "A legendary bull with emerald horns"
             },
+            "Moon Rabbit": {
+                "rarity": 5,
+                "tendency": "Eastern Immortal +15%",
+                "base_hp_range": [460, 660],
+                "base_attack_range": [92, 132],
+                "description": "A rabbit blessed by the moon goddess"
+            },
+            "Buddha Dragon Horse": {
+                "rarity": 5,
+                "tendency": "Deification Domain +15%",
+                "base_hp_range": [550, 750],
+                "base_attack_range": [112, 152],
+                "description": "A horse-dragon blessed by Buddha"
+            },
+            "Snowy Reindeer": {
+                "rarity": 5,
+                "tendency": "Skyshine Continent +15%",
+                "base_hp_range": [475, 675],
+                "base_attack_range": [95, 135],
+                "description": "A reindeer from the eternal winter"
+            },
+            "Might Panda": {
+                "rarity": 5,
+                "tendency": "Primordial Land +15%",
+                "base_hp_range": [580, 780],
+                "base_attack_range": [118, 158],
+                "description": "A panda with overwhelming strength"
+            },
+            "Shadow Immortal": {
+                "rarity": 5,
+                "tendency": "Skyshine Continent +15%",
+                "base_hp_range": [535, 735],
+                "base_attack_range": [109, 149],
+                "description": "An immortal master of shadows"
+            },
+            "Immortal Elephant": {
+                "rarity": 5,
+                "tendency": "Deification Domain +15%",
+                "base_hp_range": [600, 800],
+                "base_attack_range": [122, 162],
+                "description": "An elephant that achieved immortality"
+            },
+            "Heavenly Phoenix": {
+                "rarity": 5,
+                "tendency": "Eastern Immortal +15%",
+                "base_hp_range": [545, 745],
+                "base_attack_range": [111, 151],
+                "description": "A phoenix from the highest heavens"
+            },
+
+            # MYTHIC BEASTS (★★★★★★)
             "Yinglong": {
                 "rarity": 6,
                 "tendency": "LeiZu, Xianle, or Taiyuan +18%",
-                "location": "Mythical Realm",
                 "base_hp_range": [800, 1200],
                 "base_attack_range": [150, 200],
                 "description": "A legendary winged dragon of immense power"
+            },
+            "River God": {
+                "rarity": 6,
+                "tendency": "LeiZu, Xianle, or Taiyuan +18%",
+                "base_hp_range": [750, 1150],
+                "base_attack_range": [145, 195],
+                "description": "A divine being that controls all rivers"
+            },
+            "Immortal Panda": {
+                "rarity": 6,
+                "tendency": "Primordial Land +18%",
+                "base_hp_range": [850, 1250],
+                "base_attack_range": [160, 210],
+                "description": "A panda that transcended mortality"
+            },
+            "Dragon Ancestor": {
+                "rarity": 6,
+                "tendency": "LeiZu, Xianle, or Taiyuan +20%",
+                "base_hp_range": [900, 1300],
+                "base_attack_range": [170, 220],
+                "description": "The progenitor of all dragons"
+            },
+            "Dragon Chi Wen": {
+                "rarity": 6,
+                "tendency": "Skyshine Continent +17%",
+                "base_hp_range": [820, 1220],
+                "base_attack_range": [155, 205],
+                "description": "The ultimate evolution of Chi Wen"
             }
         }
 
         try:
             with open(self.data_file, 'w', encoding='utf-8') as f:
-                yaml.dump(default_data, f, default_flow_style=False)
-            logging.info(
-                f"Created default beast templates in {self.data_file}")
+                yaml.dump(expanded_beast_data, f, default_flow_style=False)
+            logging.info(f"Created expanded beast templates with {len(expanded_beast_data)} beasts in {self.data_file}")
             # Load the templates we just created
             self._load_templates()
         except Exception as e:
-            logging.error(f"Failed to create default templates: {e}")
+            logging.error(f"Failed to create expanded templates: {e}")
 
     def get_random_template_by_rarity(
             self, rarity: BeastRarity) -> Optional[BeastTemplate]:
@@ -1094,11 +1543,11 @@ class BeastTemplateManager:
 
         if rarity_weights is None:
             rarity_weights = {
-                BeastRarity.COMMON: 35,
-                BeastRarity.UNCOMMON: 30,
-                BeastRarity.RARE: 20,
-                BeastRarity.EPIC: 12,
-                BeastRarity.LEGENDARY: 3
+                BeastRarity.COMMON: 41,
+                BeastRarity.UNCOMMON: 38,
+                BeastRarity.RARE: 15,
+                BeastRarity.EPIC: 5,
+                BeastRarity.LEGENDARY: 1
             }
 
         available_templates = []
@@ -1245,11 +1694,14 @@ class ImmortalBeastsBot(commands.Bot):
         self.logger.info("Database initialized")
 
         # Update backup task interval based on config
-        self.backup_task.change_interval(hours=self.config.backup_interval_hours)
+        self.backup_task.change_interval(
+            hours=self.config.backup_interval_hours)
 
         if self.config.backup_enabled:
             self.backup_task.start()
-            self.logger.info(f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})")
+            self.logger.info(
+                f"Backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})"
+            )
         else:
             self.logger.info("Backup task disabled")
 
@@ -1392,12 +1844,16 @@ class ImmortalBeastsBot(commands.Bot):
             storage_info = self.db.get_storage_usage()
 
             if storage_info['total_size_mb'] > self.config.backup_max_size_mb:
-                self.logger.warning(f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB")
+                self.logger.warning(
+                    f"Backup storage limit exceeded: {storage_info['total_size_mb']:.1f}MB"
+                )
                 # Force additional cleanup
-                await self.db._cleanup_old_backups(Path("backups"), self.config.backup_retention_count // 2)
+                await self.db._cleanup_old_backups(
+                    Path("backups"), self.config.backup_retention_count // 2)
 
             # Create new backup with retention
-            backup_file = await self.db.backup_database(keep_count=self.config.backup_retention_count)
+            backup_file = await self.db.backup_database(
+                keep_count=self.config.backup_retention_count)
 
             if backup_file:
                 self.logger.info(f"Backup completed: {backup_file}")
@@ -1455,9 +1911,6 @@ class ImmortalBeastsBot(commands.Bot):
             embed.add_field(name="Power", value=beast.power_level, inline=True)
             embed.add_field(name="Tendency",
                             value=beast.tendency or "None",
-                            inline=False)
-            embed.add_field(name="Location",
-                            value=beast.location or "Unknown",
                             inline=False)
 
             if beast.description:
@@ -1637,7 +2090,7 @@ async def show_beasts(ctx, page: int = 1):
             f"{active_indicator}#{beast_id} {beast.name} {beast.rarity.emoji}",
             value=
             f"Level {beast.stats.level} | HP: {beast.stats.hp}/{beast.stats.max_hp}\n"
-            f"Power: {beast.power_level} | Location: {beast.location}",
+            f"Power: {beast.power_level}" + (f" | {beast.tendency}" if beast.tendency != "n/a" else ""),
             inline=False)
 
     embed.set_footer(
@@ -1744,11 +2197,15 @@ async def beast_info(ctx, beast_id: int):
         f"**Speed:** {target_beast.stats.speed}",
         inline=True)
 
-    # Location and tendency
-    embed.add_field(name="🌍 Origin",
-                    value=f"**Location:** {target_beast.location}\n"
-                    f"**Tendency:** {target_beast.tendency}",
-                    inline=True)
+    # Tendency only
+    if target_beast.tendency != "n/a":
+        embed.add_field(name="🌟 Tendency",
+                        value=target_beast.tendency,
+                        inline=True)
+    else:
+        embed.add_field(name="🌟 Tendency",
+                        value="None",
+                        inline=True)
 
     # Caught date
     caught_date = target_beast.caught_at.strftime("%Y-%m-%d %H:%M")
@@ -2124,39 +2581,59 @@ def run_bot_with_flask():
 # NEW BACKUP ADMIN COMMANDS - ADD THESE BEFORE def main():
 # ============================================================================
 
+
 @commands.command(name='backupstatus')
 @commands.has_permissions(administrator=True)
 async def backup_status(ctx):
     """Check backup storage usage and status"""
     storage_info = ctx.bot.db.get_storage_usage()
 
-    embed = discord.Embed(
-        title="📊 Backup System Status",
-        color=0x00AAFF
-    )
+    embed = discord.Embed(title="📊 Backup System Status", color=0x00AAFF)
 
-    embed.add_field(name="📁 Total Backups", value=storage_info['total_files'], inline=True)
-    embed.add_field(name="💾 Storage Used", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
-    embed.add_field(name="📊 Max Storage", value=f"{ctx.bot.config.backup_max_size_mb} MB", inline=True)
+    embed.add_field(name="📁 Total Backups",
+                    value=storage_info['total_files'],
+                    inline=True)
+    embed.add_field(name="💾 Storage Used",
+                    value=f"{storage_info['total_size_mb']:.1f} MB",
+                    inline=True)
+    embed.add_field(name="📊 Max Storage",
+                    value=f"{ctx.bot.config.backup_max_size_mb} MB",
+                    inline=True)
 
-    embed.add_field(name="⚙️ Backup Enabled", value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No", inline=True)
-    embed.add_field(name="⏰ Interval", value=f"{ctx.bot.config.backup_interval_hours}h", inline=True)
-    embed.add_field(name="🗃️ Retention", value=f"{ctx.bot.config.backup_retention_count} files", inline=True)
+    embed.add_field(name="⚙️ Backup Enabled",
+                    value="✅ Yes" if ctx.bot.config.backup_enabled else "❌ No",
+                    inline=True)
+    embed.add_field(name="⏰ Interval",
+                    value=f"{ctx.bot.config.backup_interval_hours}h",
+                    inline=True)
+    embed.add_field(name="🗃️ Retention",
+                    value=f"{ctx.bot.config.backup_retention_count} files",
+                    inline=True)
 
     if storage_info['oldest_backup']:
-        oldest_time = datetime.datetime.fromtimestamp(storage_info['oldest_backup'].stat().st_mtime)
-        embed.add_field(name="📅 Oldest Backup", value=oldest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
+        oldest_time = datetime.datetime.fromtimestamp(
+            storage_info['oldest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Oldest Backup",
+                        value=oldest_time.strftime("%Y-%m-%d %H:%M"),
+                        inline=True)
 
     if storage_info['newest_backup']:
-        newest_time = datetime.datetime.fromtimestamp(storage_info['newest_backup'].stat().st_mtime)
-        embed.add_field(name="📅 Newest Backup", value=newest_time.strftime("%Y-%m-%d %H:%M"), inline=True)
+        newest_time = datetime.datetime.fromtimestamp(
+            storage_info['newest_backup'].stat().st_mtime)
+        embed.add_field(name="📅 Newest Backup",
+                        value=newest_time.strftime("%Y-%m-%d %H:%M"),
+                        inline=True)
 
     # Storage warning
-    usage_percent = (storage_info['total_size_mb'] / ctx.bot.config.backup_max_size_mb) * 100
+    usage_percent = (storage_info['total_size_mb'] /
+                     ctx.bot.config.backup_max_size_mb) * 100
     if usage_percent > 80:
-        embed.add_field(name="⚠️ Warning", value=f"Storage usage at {usage_percent:.1f}%", inline=False)
+        embed.add_field(name="⚠️ Warning",
+                        value=f"Storage usage at {usage_percent:.1f}%",
+                        inline=False)
 
     await ctx.send(embed=embed)
+
 
 @commands.command(name='backup')
 @commands.has_permissions(administrator=True)
@@ -2165,38 +2642,41 @@ async def manual_backup(ctx):
     embed = discord.Embed(
         title="🔄 Creating Backup...",
         description="Please wait while the backup is created.",
-        color=0xFFAA00
-    )
+        color=0xFFAA00)
     message = await ctx.send(embed=embed)
 
     try:
-        backup_file = await ctx.bot.db.backup_database(keep_count=ctx.bot.config.backup_retention_count)
+        backup_file = await ctx.bot.db.backup_database(
+            keep_count=ctx.bot.config.backup_retention_count)
         if backup_file:
             embed = discord.Embed(
                 title="✅ Backup Created",
                 description=f"Database backup saved successfully!",
-                color=0x00FF00
-            )
-            embed.add_field(name="📁 File", value=f"`{Path(backup_file).name}`", inline=True)
+                color=0x00FF00)
+            embed.add_field(name="📁 File",
+                            value=f"`{Path(backup_file).name}`",
+                            inline=True)
 
             # Show updated storage info
             storage_info = ctx.bot.db.get_storage_usage()
-            embed.add_field(name="💾 Total Storage", value=f"{storage_info['total_size_mb']:.1f} MB", inline=True)
-            embed.add_field(name="📊 Total Backups", value=storage_info['total_files'], inline=True)
+            embed.add_field(name="💾 Total Storage",
+                            value=f"{storage_info['total_size_mb']:.1f} MB",
+                            inline=True)
+            embed.add_field(name="📊 Total Backups",
+                            value=storage_info['total_files'],
+                            inline=True)
         else:
             embed = discord.Embed(
                 title="❌ Backup Failed",
                 description="Failed to create backup. Check logs for details.",
-                color=0xFF0000
-            )
+                color=0xFF0000)
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Backup Error",
-            description=f"An error occurred: {str(e)}",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Backup Error",
+                              description=f"An error occurred: {str(e)}",
+                              color=0xFF0000)
 
     await message.edit(embed=embed)
+
 
 @commands.command(name='cleanbackups')
 @commands.has_permissions(administrator=True)
@@ -2206,11 +2686,9 @@ async def clean_backups(ctx, keep_count: int = None):
         keep_count = ctx.bot.config.backup_retention_count
 
     if keep_count < 1:
-        embed = discord.Embed(
-            title="❌ Invalid Count",
-            description="Keep count must be at least 1.",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Invalid Count",
+                              description="Keep count must be at least 1.",
+                              color=0xFF0000)
         await ctx.send(embed=embed)
         return
 
@@ -2219,23 +2697,27 @@ async def clean_backups(ctx, keep_count: int = None):
         await ctx.bot.db._cleanup_old_backups(Path("backups"), keep_count)
         storage_after = ctx.bot.db.get_storage_usage()
 
-        files_removed = storage_before['total_files'] - storage_after['total_files']
-        space_freed = storage_before['total_size_mb'] - storage_after['total_size_mb']
+        files_removed = storage_before['total_files'] - storage_after[
+            'total_files']
+        space_freed = storage_before['total_size_mb'] - storage_after[
+            'total_size_mb']
 
-        embed = discord.Embed(
-            title="🧹 Backup Cleanup Complete",
-            color=0x00FF00
-        )
-        embed.add_field(name="🗑️ Files Removed", value=files_removed, inline=True)
-        embed.add_field(name="💾 Space Freed", value=f"{space_freed:.1f} MB", inline=True)
-        embed.add_field(name="📁 Files Remaining", value=storage_after['total_files'], inline=True)
+        embed = discord.Embed(title="🧹 Backup Cleanup Complete",
+                              color=0x00FF00)
+        embed.add_field(name="🗑️ Files Removed",
+                        value=files_removed,
+                        inline=True)
+        embed.add_field(name="💾 Space Freed",
+                        value=f"{space_freed:.1f} MB",
+                        inline=True)
+        embed.add_field(name="📁 Files Remaining",
+                        value=storage_after['total_files'],
+                        inline=True)
 
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Cleanup Failed",
-            description=f"Error during cleanup: {str(e)}",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Cleanup Failed",
+                              description=f"Error during cleanup: {str(e)}",
+                              color=0xFF0000)
 
     await ctx.send(embed=embed)
 
@@ -2243,6 +2725,7 @@ async def clean_backups(ctx, keep_count: int = None):
 # ============================================================================
 # MAIN FUNCTION - REPLACE YOUR ENTIRE main() FUNCTION WITH THIS
 # ============================================================================
+
 
 def main():
     """Main entry point"""
@@ -2292,7 +2775,6 @@ if __name__ == "__main__":
         run_bot_with_flask()
     else:  # Running locally
         main()
-
 
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
