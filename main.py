@@ -983,13 +983,15 @@ class BattleEngine:
             }
         }
 
+
 class CloudBackupManager:
     """Enhanced backup manager with cloud storage support"""
 
     def __init__(self, config: BotConfig):
         self.config = config
         self.github_token = os.getenv('GITHUB_TOKEN')
-        self.github_repo = os.getenv('GITHUB_REPO')  # format: "username/repo-name"
+        self.github_repo = os.getenv(
+            'GITHUB_REPO')  # format: "username/repo-name"
         self.backup_branch = os.getenv('BACKUP_BRANCH', 'main')
         self.logger = logging.getLogger(__name__)
 
@@ -1005,7 +1007,8 @@ class CloudBackupManager:
             if self.github_token and self.github_repo:
                 cloud_backup = await self._upload_to_github(local_backup)
                 if cloud_backup:
-                    self.logger.info(f"Backup uploaded to GitHub: {cloud_backup}")
+                    self.logger.info(
+                        f"Backup uploaded to GitHub: {cloud_backup}")
                 else:
                     self.logger.warning("Failed to upload backup to GitHub")
 
@@ -1044,7 +1047,8 @@ class CloudBackupManager:
         """Upload backup to GitHub repository"""
         try:
             if not all([self.github_token, self.github_repo]):
-                self.logger.info("GitHub credentials not configured, skipping cloud backup")
+                self.logger.info(
+                    "GitHub credentials not configured, skipping cloud backup")
                 return None
 
             # Read backup file
@@ -1083,15 +1087,20 @@ class CloudBackupManager:
                     commit_data['sha'] = existing_sha
 
                 # Upload file
-                async with session.put(api_url, headers=headers, json=commit_data) as response:
+                async with session.put(api_url,
+                                       headers=headers,
+                                       json=commit_data) as response:
                     if response.status in [200, 201]:
                         result = await response.json()
                         download_url = result['content']['download_url']
-                        self.logger.info(f"Backup uploaded to GitHub: {download_url}")
+                        self.logger.info(
+                            f"Backup uploaded to GitHub: {download_url}")
                         return download_url
                     else:
                         error_text = await response.text()
-                        self.logger.error(f"GitHub upload failed: {response.status} - {error_text}")
+                        self.logger.error(
+                            f"GitHub upload failed: {response.status} - {error_text}"
+                        )
                         return None
 
         except Exception as e:
@@ -1115,18 +1124,24 @@ class CloudBackupManager:
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url, headers=headers) as response:
                     if response.status != 200:
-                        self.logger.error(f"Failed to list backups: {response.status}")
+                        self.logger.error(
+                            f"Failed to list backups: {response.status}")
                         return False
 
                     files = await response.json()
-                    backup_files = [f for f in files if f['name'].startswith('backup_') and f['name'].endswith('.db')]
+                    backup_files = [
+                        f for f in files if f['name'].startswith('backup_')
+                        and f['name'].endswith('.db')
+                    ]
 
                     if not backup_files:
-                        self.logger.warning("No backup files found in repository")
+                        self.logger.warning(
+                            "No backup files found in repository")
                         return False
 
                     # Sort by name (timestamp) to get the latest
-                    latest_backup = sorted(backup_files, key=lambda x: x['name'])[-1]
+                    latest_backup = sorted(backup_files,
+                                           key=lambda x: x['name'])[-1]
 
                     # Download the latest backup
                     download_url = latest_backup['download_url']
@@ -1142,10 +1157,14 @@ class CloudBackupManager:
                             with open(db_path, 'wb') as f:
                                 f.write(backup_content)
 
-                            self.logger.info(f"Database restored from cloud backup: {latest_backup['name']}")
+                            self.logger.info(
+                                f"Database restored from cloud backup: {latest_backup['name']}"
+                            )
                             return True
                         else:
-                            self.logger.error(f"Failed to download backup: {download_response.status}")
+                            self.logger.error(
+                                f"Failed to download backup: {download_response.status}"
+                            )
                             return False
 
         except Exception as e:
@@ -1155,16 +1174,19 @@ class CloudBackupManager:
     async def _cleanup_local_backups(self, backup_dir: Path):
         """Clean up old local backups"""
         try:
-            backup_files = sorted(backup_dir.glob("backup_*.db"), 
-                                key=lambda p: p.stat().st_mtime, reverse=True)
+            backup_files = sorted(backup_dir.glob("backup_*.db"),
+                                  key=lambda p: p.stat().st_mtime,
+                                  reverse=True)
 
             # Keep only the configured number of backups
-            for old_backup in backup_files[self.config.backup_retention_count:]:
+            for old_backup in backup_files[self.config.
+                                           backup_retention_count:]:
                 old_backup.unlink()
                 self.logger.info(f"Removed old local backup: {old_backup}")
 
         except Exception as e:
             self.logger.error(f"Local backup cleanup failed: {e}")
+
 
 class BeastTemplateManager:
     """Manages beast templates and spawning"""
@@ -1942,12 +1964,14 @@ class ImmortalBeastsBot(commands.Bot):
         # Check if database exists, if not try to restore from cloud
         db_path = Path(self.config.database_path)
         if not db_path.exists() or db_path.stat().st_size == 0:
-            self.logger.info("Database not found or empty, attempting cloud restore...")
+            self.logger.info(
+                "Database not found or empty, attempting cloud restore...")
             restored = await self.backup_manager.restore_from_cloud()
             if restored:
                 self.logger.info("✅ Database restored from cloud backup!")
             else:
-                self.logger.info("No cloud backup found, starting with fresh database")
+                self.logger.info(
+                    "No cloud backup found, starting with fresh database")
 
         await self.db.initialize()
         self.logger.info("Database initialized")
@@ -2099,7 +2123,8 @@ class ImmortalBeastsBot(commands.Bot):
             return
 
         try:
-            backup_file = await self.backup_manager.create_backup_with_cloud_storage()
+            backup_file = await self.backup_manager.create_backup_with_cloud_storage(
+            )
             if backup_file:
                 self.logger.info(f"Enhanced backup completed: {backup_file}")
             else:
@@ -2396,6 +2421,7 @@ async def next_spawn_time(ctx):
 
     await ctx.send(embed=embed)
 
+
 @commands.command(name='cloudbackup')
 @commands.has_permissions(administrator=True)
 async def manual_cloud_backup(ctx):
@@ -2403,38 +2429,41 @@ async def manual_cloud_backup(ctx):
     embed = discord.Embed(
         title="☁️ Creating Cloud Backup...",
         description="Creating backup and uploading to cloud storage.",
-        color=0xFFAA00
-    )
+        color=0xFFAA00)
     message = await ctx.send(embed=embed)
 
     try:
-        backup_file = await ctx.bot.backup_manager.create_backup_with_cloud_storage()
+        backup_file = await ctx.bot.backup_manager.create_backup_with_cloud_storage(
+        )
         if backup_file:
             embed = discord.Embed(
                 title="✅ Cloud Backup Created",
                 description="Database backup created and uploaded to cloud!",
-                color=0x00FF00
-            )
-            embed.add_field(name="📁 Local File", value=f"`{Path(backup_file).name}`", inline=True)
+                color=0x00FF00)
+            embed.add_field(name="📁 Local File",
+                            value=f"`{Path(backup_file).name}`",
+                            inline=True)
 
             if ctx.bot.backup_manager.github_repo:
-                embed.add_field(name="☁️ Cloud Storage", value="✅ Uploaded to GitHub", inline=True)
+                embed.add_field(name="☁️ Cloud Storage",
+                                value="✅ Uploaded to GitHub",
+                                inline=True)
             else:
-                embed.add_field(name="☁️ Cloud Storage", value="❌ Not configured", inline=True)
+                embed.add_field(name="☁️ Cloud Storage",
+                                value="❌ Not configured",
+                                inline=True)
         else:
             embed = discord.Embed(
                 title="❌ Backup Failed",
                 description="Failed to create backup. Check logs for details.",
-                color=0xFF0000
-            )
+                color=0xFF0000)
     except Exception as e:
-        embed = discord.Embed(
-            title="❌ Backup Error",
-            description=f"An error occurred: {str(e)}",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="❌ Backup Error",
+                              description=f"An error occurred: {str(e)}",
+                              color=0xFF0000)
 
     await message.edit(embed=embed)
+
 
 @commands.command(name='restorebackup')
 @commands.has_permissions(administrator=True)
@@ -2442,29 +2471,30 @@ async def restore_from_cloud(ctx):
     """Restore database from cloud backup"""
     embed = discord.Embed(
         title="⚠️ Restore Confirmation",
-        description="This will replace your current database with the latest cloud backup.\n"
-                   "**ALL CURRENT DATA WILL BE LOST!**\n\n"
-                   "React with ✅ to confirm or ❌ to cancel.",
-        color=0xFF8800
-    )
+        description=
+        "This will replace your current database with the latest cloud backup.\n"
+        "**ALL CURRENT DATA WILL BE LOST!**\n\n"
+        "React with ✅ to confirm or ❌ to cancel.",
+        color=0xFF8800)
     message = await ctx.send(embed=embed)
     await message.add_reaction("✅")
     await message.add_reaction("❌")
 
     def check(reaction, user):
-        return (user == ctx.author and 
-                str(reaction.emoji) in ["✅", "❌"] and 
-                reaction.message.id == message.id)
+        return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
+                and reaction.message.id == message.id)
 
     try:
-        reaction, user = await ctx.bot.wait_for('reaction_add', timeout=30.0, check=check)
+        reaction, user = await ctx.bot.wait_for('reaction_add',
+                                                timeout=30.0,
+                                                check=check)
 
         if str(reaction.emoji) == "✅":
             embed = discord.Embed(
                 title="⬇️ Restoring from Cloud...",
-                description="Downloading and restoring backup from cloud storage.",
-                color=0xFFAA00
-            )
+                description=
+                "Downloading and restoring backup from cloud storage.",
+                color=0xFFAA00)
             await message.edit(embed=embed)
 
             success = await ctx.bot.backup_manager.restore_from_cloud()
@@ -2472,30 +2502,29 @@ async def restore_from_cloud(ctx):
                 embed = discord.Embed(
                     title="✅ Restore Complete",
                     description="Database has been restored from cloud backup!\n"
-                               "**Bot restart recommended.**",
-                    color=0x00FF00
-                )
+                    "**Bot restart recommended.**",
+                    color=0x00FF00)
             else:
                 embed = discord.Embed(
                     title="❌ Restore Failed",
-                    description="Failed to restore from cloud backup. Check logs for details.",
-                    color=0xFF0000
-                )
+                    description=
+                    "Failed to restore from cloud backup. Check logs for details.",
+                    color=0xFF0000)
         else:
             embed = discord.Embed(
                 title="❌ Restore Cancelled",
                 description="Database restore has been cancelled.",
-                color=0x808080
-            )
+                color=0x808080)
 
     except asyncio.TimeoutError:
         embed = discord.Embed(
             title="⏰ Timeout",
             description="Restore confirmation timed out. Operation cancelled.",
-            color=0x808080
-        )
+            color=0x808080)
 
     await message.edit(embed=embed)
+
+
 @commands.command(name='adopt')
 async def adopt_beast(ctx):
     """Adopt a random beast (available every 2 days)"""
@@ -3759,7 +3788,7 @@ def main():
     bot.add_command(heal_beast)  # !heal command
     bot.add_command(heal_all_beasts)  # !healall command
 
-    bot.add_command(manual_cloud_backup)
+    bot.add_command(manual_cloud_backup)  #mmmmm
     bot.add_command(restore_from_cloud)
 
     try:
