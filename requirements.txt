@@ -3,3 +3,4 @@ pydantic
 PyYAML
 aiofiles
 flask
+aiohttp
