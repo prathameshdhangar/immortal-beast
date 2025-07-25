@@ -3037,7 +3037,484 @@ async def heal_all_beasts(ctx):
 
     await ctx.send(embed=embed)
 
+# USER STATS AND LEADERBOARD COMMANDS
+# Add these commands to your main.py file (around line 2600, after your heal commands)
 
+@commands.command(name='checkbeasts', aliases=['userbeasts'])
+@commands.has_permissions(administrator=True)
+async def check_user_beasts(ctx, user: discord.Member):
+    """Check another user's beast collection (admin only)"""
+    try:
+        # Get user's beasts
+        user_beasts = await ctx.bot.db.get_user_beasts(user.id)
+        user_data = await ctx.bot.get_or_create_user(user.id, str(user))
+        user_role = ctx.bot.role_manager.get_user_role(user)
+        beast_limit = ctx.bot.role_manager.get_beast_limit(user_role)
+
+        if not user_beasts:
+            embed = discord.Embed(
+                title="📦 Empty Beast Collection",
+                description=f"{user.display_name} doesn't have any beasts yet.",
+                color=0x808080)
+            await ctx.send(embed=embed)
+            return
+
+        # Create detailed embed
+        embed = discord.Embed(
+            title=f"🔍 {user.display_name}'s Beast Collection (Admin View)",
+            description=f"**{len(user_beasts)}/{beast_limit}** beasts | Requested by {ctx.author.display_name}",
+            color=0x00AAFF)
+
+        # Show up to 10 beasts in detail
+        display_beasts = user_beasts[:10]
+        for beast_id, beast in display_beasts:
+            active_indicator = "🟢 " if beast_id == user_data.active_beast_id else ""
+            embed.add_field(
+                name=f"{active_indicator}#{beast_id} {beast.name} {beast.rarity.emoji}",
+                value=f"**Level:** {beast.stats.level} | **HP:** {beast.stats.hp}/{beast.stats.max_hp}\n"
+                      f"**Power:** {beast.power_level} | **Location:** {beast.location}\n"
+                      f"**Caught:** {beast.caught_at.strftime('%Y-%m-%d')}",
+                inline=False)
+
+        if len(user_beasts) > 10:
+            embed.add_field(
+                name="📋 Additional Beasts",
+                value=f"... and {len(user_beasts) - 10} more beasts",
+                inline=False)
+
+        # User stats summary
+        embed.add_field(
+            name="📊 User Stats",
+            value=f"**Beast Stones:** {user_data.spirit_stones:,}\n"
+                  f"**Total Catches:** {user_data.total_catches}\n"
+                  f"**Battles:** {user_data.total_battles} | **Win Rate:** {user_data.win_rate:.1f}%",
+            inline=True)
+
+        # Special privileges
+        privileges = []
+        if user_data.has_used_adopt_legend:
+            privileges.append("✅ Used Legend Adopt")
+        else:
+            privileges.append("⭐ Legend Adopt Available" if ctx.bot.role_manager.can_use_adopt_legend(user_role) else "❌ No Legend Access")
+
+        if user_data.has_used_adopt_mythic:
+            privileges.append("✅ Used Mythic Adopt")
+        else:
+            privileges.append("🔥 Mythic Adopt Available" if ctx.bot.role_manager.can_use_adopt_mythic(user_role) else "❌ No Mythic Access")
+
+        embed.add_field(
+            name="🎯 Special Privileges",
+            value="\n".join(privileges),
+            inline=True)
+
+        embed.set_footer(text=f"Admin command used by {ctx.author.display_name}")
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"Failed to retrieve user beast data: {str(e)}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+
+
+@commands.command(name='userstats')
+async def user_stats(ctx, user: discord.Member = None):
+    """Check public stats for a user"""
+    if user is None:
+        user = ctx.author
+
+    try:
+        # Get user data
+        user_data = await ctx.bot.get_or_create_user(user.id, str(user))
+        user_beasts = await ctx.bot.db.get_user_beasts(user.id)
+        user_role = ctx.bot.role_manager.get_user_role(user)
+        beast_limit = ctx.bot.role_manager.get_beast_limit(user_role)
+
+        embed = discord.Embed(
+            title=f"📊 {user.display_name}'s Public Stats",
+            color=0x00AAFF)
+
+        # Beast collection stats
+        embed.add_field(
+            name="🐉 Beast Collection",
+            value=f"**Total Beasts:** {len(user_beasts)}/{beast_limit}\n"
+                  f"**Total Catches:** {user_data.total_catches}",
+            inline=True)
+
+        # Battle stats
+        embed.add_field(
+            name="⚔️ Battle Record",
+            value=f"**Total Battles:** {user_data.total_battles}\n"
+                  f"**Wins:** {user_data.wins} | **Losses:** {user_data.losses}\n"
+                  f"**Win Rate:** {user_data.win_rate:.1f}%",
+            inline=True)
+
+        # Economy stats
+        embed.add_field(
+            name="💰 Economy",
+            value=f"**Beast Stones:** {user_data.spirit_stones:,}",
+            inline=True)
+
+        # Rarity breakdown
+        if user_beasts:
+            rarity_counts = {}
+            total_power = 0
+            highest_level = 0
+
+            for _, beast in user_beasts:
+                rarity_name = beast.rarity.name.title()
+                rarity_counts[rarity_name] = rarity_counts.get(rarity_name, 0) + 1
+                total_power += beast.power_level
+                highest_level = max(highest_level, beast.stats.level)
+
+            rarity_text = []
+            for rarity in ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic']:
+                count = rarity_counts.get(rarity, 0)
+                if count > 0:
+                    stars = '⭐' * (['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'].index(rarity) + 1)
+                    rarity_text.append(f"{stars} {count}")
+
+            embed.add_field(
+                name="🌟 Collection Breakdown",
+                value="\n".join(rarity_text) if rarity_text else "No beasts",
+                inline=True)
+
+            embed.add_field(
+                name="📈 Power Stats",
+                value=f"**Total Power:** {total_power:,}\n"
+                      f"**Highest Level:** {highest_level}\n"
+                      f"**Average Power:** {total_power // len(user_beasts) if user_beasts else 0:,}",
+                inline=True)
+
+        # Account age
+        account_age = datetime.datetime.now() - user_data.created_at
+        embed.add_field(
+            name="📅 Account Info",
+            value=f"**Playing Since:** {user_data.created_at.strftime('%Y-%m-%d')}\n"
+                  f"**Days Active:** {account_age.days}",
+            inline=True)
+
+        # Active beast
+        if user_data.active_beast_id:
+            for beast_id, beast in user_beasts:
+                if beast_id == user_data.active_beast_id:
+                    embed.add_field(
+                        name="🟢 Active Beast",
+                        value=f"#{beast_id} {beast.name} {beast.rarity.emoji}\n"
+                              f"Level {beast.stats.level}",
+                        inline=False)
+                    break
+
+        embed.set_footer(text=f"Requested by {ctx.author.display_name}")
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"Failed to retrieve user stats: {str(e)}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+
+
+@commands.command(name='leaderboard', aliases=['lb', 'top'])
+async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
+    """Show various leaderboards
+
+    Categories: beasts, stones, battles, wins, catches, power
+    """
+    if limit > 20:
+        limit = 20
+    elif limit < 3:
+        limit = 3
+
+    valid_categories = ["beasts", "stones", "battles", "wins", "catches", "power"]
+    if category.lower() not in valid_categories:
+        embed = discord.Embed(
+            title="❌ Invalid Category",
+            description=f"Valid categories: {', '.join(valid_categories)}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        # Get all users from database
+        conn = ctx.bot.db._get_connection()
+        cursor = conn.execute('SELECT * FROM users ORDER BY created_at')
+        all_users = cursor.fetchall()
+        conn.close()
+
+        if not all_users:
+            embed = discord.Embed(
+                title="📊 Empty Leaderboard",
+                description="No users found in the database.",
+                color=0x808080)
+            await ctx.send(embed=embed)
+            return
+
+        # Calculate leaderboard data
+        leaderboard_data = []
+
+        for user_row in all_users:
+            try:
+                # Get Discord user object
+                discord_user = ctx.bot.get_user(user_row['user_id'])
+                if not discord_user:
+                    try:
+                        discord_user = await ctx.bot.fetch_user(user_row['user_id'])
+                    except:
+                        continue
+
+                user_data = User(
+                    user_id=user_row['user_id'],
+                    username=user_row['username'],
+                    spirit_stones=user_row['spirit_stones'],
+                    total_catches=user_row['total_catches'],
+                    total_battles=user_row['total_battles'],
+                    wins=user_row['wins'],
+                    losses=user_row['losses'],
+                    created_at=datetime.datetime.fromisoformat(user_row['created_at'])
+                )
+
+                # Get beast count and total power for this user
+                user_beasts = await ctx.bot.db.get_user_beasts(user_data.user_id)
+                beast_count = len(user_beasts)
+                total_power = sum(beast.power_level for _, beast in user_beasts)
+
+                entry = {
+                    'user': discord_user,
+                    'user_data': user_data,
+                    'beast_count': beast_count,
+                    'total_power': total_power
+                }
+                leaderboard_data.append(entry)
+            except Exception as e:
+                continue  # Skip problematic users
+
+        if not leaderboard_data:
+            embed = discord.Embed(
+                title="📊 Empty Leaderboard",
+                description="No valid users found for leaderboard.",
+                color=0x808080)
+            await ctx.send(embed=embed)
+            return
+
+        # Sort based on category
+        category = category.lower()
+        if category == "beasts":
+            leaderboard_data.sort(key=lambda x: x['beast_count'], reverse=True)
+            title = "🐉 Beast Collection Leaderboard"
+            value_key = 'beast_count'
+            value_suffix = " beasts"
+        elif category == "stones":
+            leaderboard_data.sort(key=lambda x: x['user_data'].spirit_stones, reverse=True)
+            title = "💰 Beast Stones Leaderboard"
+            value_key = 'spirit_stones'
+            value_suffix = " stones"
+        elif category == "battles":
+            leaderboard_data.sort(key=lambda x: x['user_data'].total_battles, reverse=True)
+            title = "⚔️ Total Battles Leaderboard"
+            value_key = 'total_battles'
+            value_suffix = " battles"
+        elif category == "wins":
+            leaderboard_data.sort(key=lambda x: x['user_data'].wins, reverse=True)
+            title = "🏆 Battle Wins Leaderboard"
+            value_key = 'wins'
+            value_suffix = " wins"
+        elif category == "catches":
+            leaderboard_data.sort(key=lambda x: x['user_data'].total_catches, reverse=True)
+            title = "🎯 Total Catches Leaderboard"
+            value_key = 'total_catches'
+            value_suffix = " catches"
+        elif category == "power":
+            leaderboard_data.sort(key=lambda x: x['total_power'], reverse=True)
+            title = "💪 Total Power Leaderboard"
+            value_key = 'total_power'
+            value_suffix = " power"
+
+        # Create leaderboard embed
+        embed = discord.Embed(
+            title=title,
+            description=f"Top {min(limit, len(leaderboard_data))} players",
+            color=0xFFD700)
+
+        # Add leaderboard entries
+        medals = ["🥇", "🥈", "🥉"]
+
+        for i, entry in enumerate(leaderboard_data[:limit]):
+            rank = i + 1
+            medal = medals[i] if i < 3 else f"{rank}."
+
+            if value_key == 'spirit_stones':
+                value = entry['user_data'].spirit_stones
+            elif value_key == 'total_battles':
+                value = entry['user_data'].total_battles
+            elif value_key == 'wins':
+                value = entry['user_data'].wins
+            elif value_key == 'total_catches':
+                value = entry['user_data'].total_catches
+            elif value_key == 'beast_count':
+                value = entry['beast_count']
+            elif value_key == 'total_power':
+                value = entry['total_power']
+
+            # Add win rate for battle-related leaderboards
+            if category in ["battles", "wins"]:
+                win_rate = entry['user_data'].win_rate
+                embed.add_field(
+                    name=f"{medal} {entry['user'].display_name}",
+                    value=f"**{value:,}**{value_suffix}\n*{win_rate:.1f}% win rate*",
+                    inline=True)
+            else:
+                embed.add_field(
+                    name=f"{medal} {entry['user'].display_name}",
+                    value=f"**{value:,}**{value_suffix}",
+                    inline=True)
+
+        # Find requesting user's rank
+        user_rank = None
+        for i, entry in enumerate(leaderboard_data):
+            if entry['user'].id == ctx.author.id:
+                user_rank = i + 1
+                break
+
+        if user_rank and user_rank > limit:
+            embed.set_footer(text=f"Your rank: #{user_rank}")
+        elif user_rank:
+            embed.set_footer(text=f"You're on the leaderboard! 🎉")
+        else:
+            embed.set_footer(text="Start your journey to climb the leaderboard!")
+
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Leaderboard Error",
+            description=f"Failed to generate leaderboard: {str(e)}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+
+
+@commands.command(name='serverbeasts', aliases=['serverstats'])
+async def server_beast_stats(ctx):
+    """Show server-wide beast statistics"""
+    try:
+        # Get all users and beasts
+        conn = ctx.bot.db._get_connection()
+
+        # User stats
+        user_cursor = conn.execute('SELECT COUNT(*) as total_users FROM users')
+        total_users = user_cursor.fetchone()['total_users']
+
+        # Beast stats
+        beast_cursor = conn.execute('SELECT COUNT(*) as total_beasts FROM beasts')
+        total_beasts = beast_cursor.fetchone()['total_beasts']
+
+        # Battle stats
+        battle_cursor = conn.execute('SELECT SUM(total_battles) as total_battles, SUM(wins) as total_wins FROM users')
+        battle_stats = battle_cursor.fetchone()
+        total_battles = battle_stats['total_battles'] or 0
+        total_wins = battle_stats['total_wins'] or 0
+
+        # Stone stats
+        stone_cursor = conn.execute('SELECT SUM(spirit_stones) as total_stones, SUM(total_catches) as total_catches FROM users')
+        stone_stats = stone_cursor.fetchone()
+        total_stones = stone_stats['total_stones'] or 0
+        total_catches = stone_stats['total_catches'] or 0
+
+        conn.close()
+
+        # Get detailed beast data for rarity breakdown
+        all_beast_data = []
+        user_cursor = conn = ctx.bot.db._get_connection()
+        user_rows = conn.execute('SELECT user_id FROM users').fetchall()
+
+        rarity_counts = {rarity.name: 0 for rarity in BeastRarity}
+        total_power = 0
+        highest_level = 0
+
+        for user_row in user_rows:
+            try:
+                user_beasts = await ctx.bot.db.get_user_beasts(user_row['user_id'])
+                for _, beast in user_beasts:
+                    rarity_counts[beast.rarity.name] += 1
+                    total_power += beast.power_level
+                    highest_level = max(highest_level, beast.stats.level)
+            except:
+                continue
+
+        conn.close()
+
+        # Create server stats embed
+        embed = discord.Embed(
+            title="🏰 Server Beast Statistics",
+            description=f"Overview of {ctx.guild.name}'s beast community",
+            color=0x00AAFF)
+
+        # General stats
+        embed.add_field(
+            name="👥 Community Stats",
+            value=f"**Total Players:** {total_users:,}\n"
+                  f"**Total Beasts:** {total_beasts:,}\n"
+                  f"**Total Catches:** {total_catches:,}",
+            inline=True)
+
+        # Battle stats
+        embed.add_field(
+            name="⚔️ Battle Stats",
+            value=f"**Total Battles:** {total_battles:,}\n"
+                  f"**Total Wins:** {total_wins:,}\n"
+                  f"**Average per User:** {(total_battles/total_users):.1f}" if total_users > 0 else "**Average per User:** 0",
+            inline=True)
+
+        # Economy stats
+        embed.add_field(
+            name="💰 Economy Stats",
+            value=f"**Total Beast Stones:** {total_stones:,}\n"
+                  f"**Average per User:** {(total_stones/total_users):,.0f}" if total_users > 0 else "**Average per User:** 0\n"
+                  f"**Stones per Beast:** {(total_stones/total_beasts):,.0f}" if total_beasts > 0 else "**Stones per Beast:** 0",
+            inline=True)
+
+        # Rarity breakdown
+        if total_beasts > 0:
+            rarity_text = []
+            for rarity in BeastRarity:
+                count = rarity_counts.get(rarity.name, 0)
+                percentage = (count / total_beasts) * 100 if total_beasts > 0 else 0
+                if count > 0:
+                    rarity_text.append(f"{rarity.emoji} {count:,} ({percentage:.1f}%)")
+
+            embed.add_field(
+                name="🌟 Rarity Distribution",
+                value="\n".join(rarity_text) if rarity_text else "No beasts found",
+                inline=True)
+
+            # Power stats
+            embed.add_field(
+                name="💪 Power Stats",
+                value=f"**Total Server Power:** {total_power:,}\n"
+                      f"**Highest Level:** {highest_level}\n"
+                      f"**Average Power:** {(total_power/total_beasts):,.0f}",
+                inline=True)
+
+        # Activity stats
+        embed.add_field(
+            name="📊 Activity",
+            value=f"**Beasts per Player:** {(total_beasts/total_users):.1f}" if total_users > 0 else "**Beasts per Player:** 0\n"
+                  f"**Catches per Player:** {(total_catches/total_users):.1f}" if total_users > 0 else "**Catches per Player:** 0\n"
+                  f"**Most Active:** Use `{ctx.bot.config.prefix}leaderboard catches`",
+            inline=True)
+
+        embed.set_footer(text=f"Data as of {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} | Use !leaderboard for rankings")
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Server Stats Error",
+            description=f"Failed to generate server statistics: {str(e)}",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        
 @commands.command(name='battle', aliases=['fight'])
 async def battle_command(ctx, opponent: discord.Member = None):
     """Challenge another user to a beast battle"""
@@ -3790,6 +4267,10 @@ def main():
 
     bot.add_command(manual_cloud_backup)  #mmmmm
     bot.add_command(restore_from_cloud)
+    bot.add_command(check_user_beasts)     # !checkbeasts
+    bot.add_command(user_stats)            # !userstats  
+    bot.add_command(leaderboard)           # !leaderboard
+    bot.add_command(server_beast_stats)    # !serverbeasts
 
     try:
         bot.run(config.token)
