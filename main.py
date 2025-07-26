@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Union, Any
 from contextlib import asynccontextmanager
 import sqlite3
+import functools
+
 
 import discord
 from discord.ext import commands, tasks
@@ -2274,44 +2276,44 @@ class ImmortalBeastsBot(commands.Bot):
 
 def require_channel(channel_type: str):
     """Decorator to restrict commands to specific channels"""
-
     def decorator(func):
-
+        @functools.wraps(func)
         async def wrapper(ctx, *args, **kwargs):
             config = ctx.bot.config
 
             if channel_type == "battle":
-                if ctx.channel.id not in config.battle_channel_ids:
+                # Ensure type consistency
+                battle_channel_ids = [int(ch_id) for ch_id in config.battle_channel_ids]
+                current_channel_id = int(ctx.channel.id)
+
+                if current_channel_id not in battle_channel_ids:
                     embed = discord.Embed(
                         title="❌ Wrong Channel",
-                        description=
-                        "This command can only be used in designated battle channels!",
+                        description="This command can only be used in designated battle channels!",
                         color=0xFF0000)
                     await ctx.send(embed=embed)
                     return
+
             elif channel_type == "adopt":
-                if ctx.channel.id != config.adopt_channel_id:
+                if int(ctx.channel.id) != int(config.adopt_channel_id):
                     embed = discord.Embed(
                         title="❌ Wrong Channel",
-                        description=
-                        "This command can only be used in the adoption channel!",
+                        description="This command can only be used in the adoption channel!",
                         color=0xFF0000)
                     await ctx.send(embed=embed)
                     return
+
             elif channel_type == "spawn":
-                if ctx.channel.id != config.spawn_channel_id:
+                if int(ctx.channel.id) != int(config.spawn_channel_id):
                     embed = discord.Embed(
                         title="❌ Wrong Channel",
-                        description=
-                        "This command can only be used in the beast spawn channel!",
+                        description="This command can only be used in the beast spawn channel!",
                         color=0xFF0000)
                     await ctx.send(embed=embed)
                     return
 
             return await func(ctx, *args, **kwargs)
-
         return wrapper
-
     return decorator
 
 
@@ -3777,42 +3779,201 @@ async def battle_command(ctx, opponent: discord.Member = None):
     await ctx.bot.db.update_user(challenger_user)
     await ctx.bot.db.update_user(opponent_user)
 
-    # Create battle result embed
+    # Determine battle outcome and styling
+    challenger_beast_obj = challenger_beast[1]
+    opponent_beast_obj = opponent_beast[1]
+
     if battle_result['result'] == BattleResult.WIN:
-        color = 0x00FF00 if winner_user == ctx.author else 0xFF0000
-        title = "🏆 Victory!" if winner_user == ctx.author else "💀 Defeat!"
+        if winner_user == ctx.author:
+            color = 0x00FF7F  # Bright victory green
+            title_icon = "🏆"
+            result_text = "**VICTORY**"
+            victory_gradient = "🟢🟡🟠🔴"
+        else:
+            color = 0xFF4500  # Dramatic defeat orange-red  
+            title_icon = "💀"
+            result_text = "**DEFEAT**"
+            victory_gradient = "🔴🟠🟡🟢"
     elif battle_result['result'] == BattleResult.LOSS:
-        color = 0xFF0000 if winner_user == ctx.author else 0x00FF00
-        title = "💀 Defeat!" if winner_user == ctx.author else "🏆 Victory!"
+        if winner_user == ctx.author:
+            color = 0x00FF7F
+            title_icon = "🏆"
+            result_text = "**VICTORY**"
+            victory_gradient = "🟢🟡🟠🔴"
+        else:
+            color = 0xFF4500
+            title_icon = "💀"
+            result_text = "**DEFEAT**"
+            victory_gradient = "🔴🟠🟡🟢"
     else:
-        color = 0xFFFF00
-        title = "🤝 Draw!"
+        color = 0xFFD700  # Golden draw
+        title_icon = "⚖️"
+        result_text = "**DRAW**"
+        victory_gradient = "🟡🟠🟡🟠"
 
-    embed = discord.Embed(title=f"⚔️ Battle Result: {title}", color=color)
+    # Create the main embed with cinematic styling
+    embed = discord.Embed(color=color)
+
+    # Epic header design
+    embed.add_field(
+        name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        value=f"# {title_icon} ⚔️ **IMMORTAL BEAST ARENA** ⚔️ {title_icon}\n" +
+              f"## {victory_gradient} {result_text} {victory_gradient[::-1]}\n" +
+              f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        inline=False
+    )
+
+    # Fighter showcase with detailed stats
+    embed.add_field(
+        name="🥊 **COMBATANTS**",
+        value=f"### 🔵 {ctx.author.display_name}'s Champion\n" +
+              f"```ansi\n" +
+              f"\u001b[1;36m{challenger_beast_obj.name}\u001b[0m {challenger_beast_obj.rarity.emoji}\n" +
+              f"Level: {challenger_beast_obj.stats.level} | Power: {challenger_beast_obj.power_level:,}\n" +
+              f"ATK: {challenger_beast_obj.stats.attack} | DEF: {challenger_beast_obj.stats.defense} | SPD: {challenger_beast_obj.stats.speed}\n" +
+              f"```\n" +
+              f"### 🔴 {opponent.display_name}'s Champion\n" +
+              f"```ansi\n" +
+              f"\u001b[1;31m{opponent_beast_obj.name}\u001b[0m {opponent_beast_obj.rarity.emoji}\n" +
+              f"Level: {opponent_beast_obj.stats.level} | Power: {opponent_beast_obj.power_level:,}\n" +
+              f"ATK: {opponent_beast_obj.stats.attack} | DEF: {opponent_beast_obj.stats.defense} | SPD: {opponent_beast_obj.stats.speed}\n" +
+              f"```",
+        inline=False
+    )
+
+    # Battle analytics with enhanced visuals
+    battle_intensity = "🔥🔥🔥" if battle_result['turns'] > 15 else "🔥🔥" if battle_result['turns'] > 8 else "🔥"
+    battle_type = "LEGENDARY EPIC" if battle_result['turns'] > 20 else "EPIC CLASH" if battle_result['turns'] > 12 else "QUICK STRIKE" if battle_result['turns'] <= 5 else "STANDARD DUEL"
 
     embed.add_field(
-        name="🥊 Fighters",
-        value=
-        f"**{ctx.author.display_name}**: {challenger_beast[1].name} {challenger_beast[1].rarity.emoji}\n"
-        f"**{opponent.display_name}**: {opponent_beast[1].name} {opponent_beast[1].rarity.emoji}",
-        inline=False)
+        name="📊 **BATTLE ANALYTICS**",
+        value=f"```yaml\n" +
+              f"Battle Type: {battle_type}\n" +
+              f"Intensity:  {battle_intensity}\n" +
+              f"Duration:   {battle_result['turns']} rounds\n" +
+              f"Combat ID:  #{challenger_user.total_battles:04d}\n" +
+              f"```",
+        inline=True
+    )
 
+    # Championship results
     if winner_user:
-        embed.add_field(name="🏆 Winner",
-                        value=winner_user.display_name,
-                        inline=True)
+        winner_beast = battle_result['winner']
+        winner_hp = battle_result['final_hp'][winner_beast]
+
+        embed.add_field(
+            name="👑 **CHAMPION**",
+            value=f"```diff\n" +
+                  f"+ {winner_user.display_name}\n" +
+                  f"+ {winner_beast}\n" +
+                  f"+ {winner_hp} HP Remaining\n" +
+                  f"```\n" +
+                  f"🏆 **Victory Achieved!**",
+            inline=True
+        )
     else:
-        embed.add_field(name="🤝 Result", value="Draw", inline=True)
+        embed.add_field(
+            name="⚖️ **STALEMATE**",
+            value=f"```css\n" +
+                  f"[Both Warriors Stand]\n" +
+                  f"[Honor Preserved]\n" +
+                  f"[Rematch Awaited]\n" +
+                  f"```\n" +
+                  f"🤝 **Honorable Draw**",
+            inline=True
+        )
 
-    embed.add_field(name="🔢 Turns", value=battle_result['turns'], inline=True)
+    # Advanced health visualization
+    def create_premium_health_bar(current_hp, max_hp, length=8):
+        if max_hp == 0:
+            return "💀" * length
 
-    # Final HP
+        percentage = current_hp / max_hp
+        filled = int(percentage * length)
+
+        if percentage > 0.7:
+            bar_char = "🟢"
+        elif percentage > 0.4:
+            bar_char = "🟡"
+        elif percentage > 0.1:
+            bar_char = "🟠"
+        else:
+            bar_char = "🔴"
+
+        if current_hp <= 0:
+            return "💀" * length
+
+        empty_char = "⬛"
+        return bar_char * filled + empty_char * (length - filled)
+
+    challenger_final_hp = battle_result['final_hp'][challenger_beast_obj.name]
+    opponent_final_hp = battle_result['final_hp'][opponent_beast_obj.name]
+
+    challenger_health_bar = create_premium_health_bar(challenger_final_hp, challenger_beast_obj.stats.max_hp)
+    opponent_health_bar = create_premium_health_bar(opponent_final_hp, opponent_beast_obj.stats.max_hp)
+
+    challenger_hp_percent = int((challenger_final_hp / challenger_beast_obj.stats.max_hp) * 100) if challenger_beast_obj.stats.max_hp > 0 else 0
+    opponent_hp_percent = int((opponent_final_hp / opponent_beast_obj.stats.max_hp) * 100) if opponent_beast_obj.stats.max_hp > 0 else 0
+
     embed.add_field(
-        name="❤️ Final HP",
-        value=
-        f"**{challenger_beast[1].name}**: {battle_result['final_hp'][challenger_beast[1].name]}\n"
-        f"**{opponent_beast[1].name}**: {battle_result['final_hp'][opponent_beast[1].name]}",
-        inline=True)
+        name="❤️ **POST-BATTLE STATUS**",
+        value=f"### {challenger_beast_obj.name}\n" +
+              f"{challenger_health_bar} `{challenger_hp_percent}%`\n" +
+              f"`{challenger_final_hp:,}/{challenger_beast_obj.stats.max_hp:,} HP`\n\n" +
+              f"### {opponent_beast_obj.name}\n" +
+              f"{opponent_health_bar} `{opponent_hp_percent}%`\n" +
+              f"`{opponent_final_hp:,}/{opponent_beast_obj.stats.max_hp:,} HP`",
+        inline=False
+    )
+
+    # Dynamic rewards section
+    if winner_user:
+        embed.add_field(
+            name="🎁 **SPOILS OF WAR**",
+            value="```diff\n" +
+                  "+ Victory Glory Earned\n" +
+                  "+ Battle Experience +XP\n" +
+                  "+ Win Streak Updated\n" +
+                  "```",
+            inline=True
+        )
+
+        embed.add_field(
+            name="💔 **BATTLE SCARS**",
+            value="```diff\n" +
+                  "- Beast Requires Healing\n" +
+                  "- Defeat Recorded\n" +
+                  "- Comeback Training Needed\n" +
+                  "```",
+            inline=True
+        )
+    else:
+        embed.add_field(
+            name="🏛️ **HALL OF HONOR**",
+            value="```yaml\n" +
+                  "Status: Mutual Respect\n" +
+                  "Result: Experience Gained\n" +
+                  "Future: Rematch Pending\n" +
+                  "```",
+            inline=False
+        )
+
+    # Premium footer with arena branding
+    embed.add_field(
+        name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        value=f"⚔️ **IMMORTAL BEAST ARENA** • Battle #{challenger_user.total_battles:04d} • {ctx.guild.name}\n" +
+              f"💡 *Use `!heal` to restore your beast • `!beasts` to view collection*\n" +
+              f"🏟️ *Next battle awaits in the arena...*",
+        inline=False
+    )
+
+    # Set author and timestamp for premium feel
+    embed.set_author(
+        name=f"Battle Report: {ctx.author.display_name} vs {opponent.display_name}",
+        icon_url=ctx.author.display_avatar.url if hasattr(ctx.author, 'display_avatar') else None
+    )
+
+    embed.timestamp = discord.utils.utcnow()
 
     await ctx.send(embed=embed)
 
