@@ -18,7 +18,6 @@ from contextlib import asynccontextmanager
 import sqlite3
 import functools
 
-
 import discord
 from discord.ext import commands, tasks
 import aiofiles
@@ -135,7 +134,7 @@ class BotConfig(BaseModel):
                     1393424880787259482, 1393626191935705198,
                     1394289930515124325, 1393163125850640414
                 ],
-                battle_channel_ids=[1397783271961792604,1397783317163806730],
+                battle_channel_ids=[1397783271961792604, 1397783317163806730],
                 adopt_channel_id=1397783378618748948,
                 spawn_channel_id=1397783188394475520)
             with open(config_path, 'w') as f:
@@ -224,8 +223,10 @@ class BotConfig(BaseModel):
             adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')),
             # ADD THESE MISSING LINES:
             battle_channel_ids=battle_channel_ids,
-            adopt_channel_id=int(os.getenv('ADOPT_CHANNEL_ID', '1397783378618748948')),
-            spawn_channel_id=int(os.getenv('SPAWN_CHANNEL_ID', '1397783188394475520')))
+            adopt_channel_id=int(
+                os.getenv('ADOPT_CHANNEL_ID', '1397783378618748948')),
+            spawn_channel_id=int(
+                os.getenv('SPAWN_CHANNEL_ID', '1397783188394475520')))
 
 
 # Enums and Constants
@@ -2276,20 +2277,25 @@ class ImmortalBeastsBot(commands.Bot):
 
 def require_channel(channel_type: str):
     """Decorator to restrict commands to specific channels"""
+
     def decorator(func):
+
         @functools.wraps(func)
         async def wrapper(ctx, *args, **kwargs):
             config = ctx.bot.config
 
             if channel_type == "battle":
                 # Ensure type consistency
-                battle_channel_ids = [int(ch_id) for ch_id in config.battle_channel_ids]
+                battle_channel_ids = [
+                    int(ch_id) for ch_id in config.battle_channel_ids
+                ]
                 current_channel_id = int(ctx.channel.id)
 
                 if current_channel_id not in battle_channel_ids:
                     embed = discord.Embed(
                         title="❌ Wrong Channel",
-                        description="This command can only be used in designated battle channels!",
+                        description=
+                        "This command can only be used in designated battle channels!",
                         color=0xFF0000)
                     await ctx.send(embed=embed)
                     return
@@ -2298,7 +2304,8 @@ def require_channel(channel_type: str):
                 if int(ctx.channel.id) != int(config.adopt_channel_id):
                     embed = discord.Embed(
                         title="❌ Wrong Channel",
-                        description="This command can only be used in the adoption channel!",
+                        description=
+                        "This command can only be used in the adoption channel!",
                         color=0xFF0000)
                     await ctx.send(embed=embed)
                     return
@@ -2307,13 +2314,16 @@ def require_channel(channel_type: str):
                 if int(ctx.channel.id) != int(config.spawn_channel_id):
                     embed = discord.Embed(
                         title="❌ Wrong Channel",
-                        description="This command can only be used in the beast spawn channel!",
+                        description=
+                        "This command can only be used in the beast spawn channel!",
                         color=0xFF0000)
                     await ctx.send(embed=embed)
                     return
 
             return await func(ctx, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -3685,25 +3695,98 @@ async def server_beast_stats(ctx):
 @require_channel("battle")
 async def battle_command(ctx, opponent: discord.Member = None):
     """Challenge another user to a beast battle"""
+
+    # Enhanced error: No opponent provided
     if opponent is None:
-        embed = discord.Embed(
-            title="❌ Invalid Usage",
-            description=f"Usage: `{ctx.bot.config.prefix}battle @user`",
-            color=0xFF0000)
+        embed = discord.Embed(color=0xFF6B6B)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# ❌ ⚔️ **IMMORTAL BEAST ARENA** ⚔️ ❌\n" +
+                        "## 🚫 **INVALID BATTLE REQUEST** 🚫\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(
+            name="📋 **Battle Instructions**",
+            value=f"```yaml\n" +
+            f"Command Format: {ctx.bot.config.prefix}battle @opponent\n" +
+            f"Example Usage: {ctx.bot.config.prefix}battle @username\n" +
+            f"Required: Valid opponent mention\n" + f"```",
+            inline=False)
+        embed.add_field(
+            name="💡 **How to Start a Battle**",
+            value="🎯 **Step 1:** Type `!battle` followed by @ mention\n" +
+            "🎯 **Step 2:** Click on someone's name to mention them\n" +
+            "🎯 **Step 3:** Press Enter to send the challenge!\n\n" +
+            "**Example:** `!battle @FriendName`",
+            inline=False)
+        embed.set_footer(
+            text="⚔️ IMMORTAL BEAST ARENA • Choose your opponent wisely!")
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
+    # Enhanced error: Opponent is a bot
     if opponent.bot:
-        embed = discord.Embed(title="❌ Invalid Opponent",
-                              description="You can't battle a bot!",
-                              color=0xFF0000)
+        embed = discord.Embed(color=0xFF8C42)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 🤖 ⚔️ **IMMORTAL BEAST ARENA** ⚔️ 🤖\n" +
+                        "## ⚠️ **INVALID OPPONENT TYPE** ⚠️\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🤖 **Bot Detection**",
+                        value=f"```diff\n" +
+                        f"- Target: {opponent.display_name}\n" +
+                        f"- Type: Discord Bot\n" +
+                        f"- Status: Cannot participate in battles\n" + f"```",
+                        inline=False)
+        embed.add_field(name="👥 **Valid Opponents**",
+                        value="✅ **Human players** in this server\n" +
+                        "✅ **Active members** with beast collections\n" +
+                        "✅ **Users** who have adopted beasts\n\n" +
+                        "❌ **Discord bots** (like me!)\n" +
+                        "❌ **Webhook users**",
+                        inline=False)
+        embed.add_field(
+            name="🎯 **Suggestion**",
+            value=f"Try challenging a human player instead!\n" +
+            f"Use `{ctx.bot.config.prefix}leaderboard` to see active players.",
+            inline=False)
+        embed.set_footer(
+            text="⚔️ IMMORTAL BEAST ARENA • Only humans can command beasts!")
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
+    # Enhanced error: Trying to battle yourself
     if opponent.id == ctx.author.id:
-        embed = discord.Embed(title="❌ Invalid Opponent",
-                              description="You can't battle yourself!",
-                              color=0xFF0000)
+        embed = discord.Embed(color=0xFFB347)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 🪞 ⚔️ **IMMORTAL BEAST ARENA** ⚔️ 🪞\n" +
+                        "## 🤔 **SELF-CHALLENGE DETECTED** 🤔\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🪞 **Mirror Match Analysis**",
+                        value="```yaml\n" + "Challenger: " +
+                        ctx.author.display_name + "\n" + "Opponent:   " +
+                        ctx.author.display_name + "\n" +
+                        "Result:     Paradox Detected\n" + "```",
+                        inline=False)
+        embed.add_field(
+            name="🧠 **Battle Philosophy**",
+            value="🌟 **Training** happens through self-reflection\n" +
+            "⚔️ **Combat** requires worthy opponents\n" +
+            "🏆 **Glory** comes from defeating others\n" +
+            "🤝 **Growth** comes from facing challenges",
+            inline=False)
+        embed.add_field(
+            name="🎯 **Find an Opponent**",
+            value=f"📊 `{ctx.bot.config.prefix}leaderboard` - See top players\n"
+            + f"👥 `{ctx.bot.config.prefix}serverstats` - View active users\n" +
+            f"🔍 Look around the server for other beast masters!",
+            inline=False)
+        embed.set_footer(
+            text=
+            "⚔️ IMMORTAL BEAST ARENA • Challenge others to prove your worth!")
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
@@ -3711,20 +3794,74 @@ async def battle_command(ctx, opponent: discord.Member = None):
     challenger_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
     opponent_beasts = await ctx.bot.db.get_user_beasts(opponent.id)
 
+    # Enhanced error: Challenger has no beasts
     if not challenger_beasts:
-        embed = discord.Embed(
-            title="❌ No Beasts",
-            description="You don't have any beasts to battle with!",
-            color=0xFF0000)
+        embed = discord.Embed(color=0x845EC2)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 📦 ⚔️ **IMMORTAL BEAST ARENA** ⚔️ 📦\n" +
+                        "## 🚫 **NO BEASTS AVAILABLE** 🚫\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(
+            name="📊 **Your Beast Collection**",
+            value="```diff\n" + f"- Trainer: {ctx.author.display_name}\n" +
+            "- Beasts: 0/6\n" + "- Status: No battle-ready beasts\n" + "```",
+            inline=False)
+        embed.add_field(
+            name="🎯 **How to Get Your First Beast**",
+            value=
+            f"🐾 `{ctx.bot.config.prefix}adopt` - Adopt a random beast (every 2 days)\n"
+            +
+            f"🌟 `{ctx.bot.config.prefix}catch` - Catch wild beasts when they spawn\n"
+            + f"💰 `{ctx.bot.config.prefix}stone` - Get daily beast stones\n" +
+            f"👁️ `{ctx.bot.config.prefix}nextspawn` - Check when beasts spawn",
+            inline=False)
+        embed.add_field(name="🎮 **Beast Master Journey**",
+                        value="**Step 1:** 🏠 Adopt your first companion\n" +
+                        "**Step 2:** 🎯 Catch wild beasts in spawn channel\n" +
+                        "**Step 3:** 💪 Train and level up your beasts\n" +
+                        "**Step 4:** ⚔️ Return here to battle!",
+                        inline=False)
+        embed.set_footer(
+            text=
+            "⚔️ IMMORTAL BEAST ARENA • Every legend starts with a single beast!"
+        )
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
+    # Enhanced error: Opponent has no beasts
     if not opponent_beasts:
-        embed = discord.Embed(
-            title="❌ Opponent Has No Beasts",
-            description=
-            f"{opponent.display_name} doesn't have any beasts to battle with!",
-            color=0xFF0000)
+        embed = discord.Embed(color=0xFF6B9D)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 👤 ⚔️ **IMMORTAL BEAST ARENA** ⚔️ 👤\n" +
+                        "## 😔 **OPPONENT NOT READY** 😔\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🔍 **Target Analysis**",
+                        value=f"```yaml\n" +
+                        f"Opponent: {opponent.display_name}\n" +
+                        f"Beast Count: 0\n" + f"Battle Ready: No\n" +
+                        f"Status: Needs to build collection\n" + f"```",
+                        inline=False)
+        embed.add_field(
+            name="💬 **Message for " + opponent.display_name + "**",
+            value=f"Hey {opponent.mention}! 👋\n\n" +
+            f"🎯 **{ctx.author.display_name} wants to battle you!**\n" +
+            f"🐾 Use `{ctx.bot.config.prefix}adopt` to get your first beast\n" +
+            f"⚔️ Then you can accept battle challenges!",
+            inline=False)
+        embed.add_field(
+            name="🔄 **Alternative Opponents**",
+            value=
+            f"📊 `{ctx.bot.config.prefix}leaderboard` - Find active beast masters\n"
+            + f"👥 Look for users with beast collections\n" +
+            f"🎯 Challenge someone who's ready to fight!",
+            inline=False)
+        embed.set_footer(
+            text=
+            "⚔️ IMMORTAL BEAST ARENA • Help others start their beast journey!")
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
@@ -3732,9 +3869,35 @@ async def battle_command(ctx, opponent: discord.Member = None):
     challenger_beast = await select_beast_for_battle(ctx, ctx.author,
                                                      challenger_beasts, "your")
     if not challenger_beast:
-        embed = discord.Embed(title="❌ Battle Cancelled",
-                              description="No beast selected for battle.",
-                              color=0xFF0000)
+        embed = discord.Embed(color=0xFFA07A)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# ⏰ ⚔️ **IMMORTAL BEAST ARENA** ⚔️ ⏰\n" +
+                        "## 🚫 **BATTLE CANCELLED** 🚫\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="⏱️ **Selection Timeout**",
+                        value=f"```diff\n" +
+                        f"- Challenger: {ctx.author.display_name}\n" +
+                        f"- Action: Beast selection\n" +
+                        f"- Result: No response (30s timeout)\n" +
+                        f"- Status: Battle cancelled\n" + f"```",
+                        inline=False)
+        embed.add_field(
+            name="💡 **What Happened?**",
+            value="🎯 You were asked to select a beast for battle\n" +
+            "⏰ The selection window timed out after 30 seconds\n" +
+            "🚫 The battle was automatically cancelled\n" +
+            "🔄 You can try challenging again anytime!",
+            inline=False)
+        embed.add_field(name="🎮 **Battle Tips**",
+                        value="⚡ **Respond quickly** when selecting beasts\n" +
+                        "📱 **Stay active** during the battle setup\n" +
+                        "🎯 **Choose wisely** - pick your strongest beast!\n" +
+                        "❤️ **Check HP** - heal damaged beasts first",
+                        inline=False)
+        embed.set_footer(
+            text="⚔️ IMMORTAL BEAST ARENA • Quick decisions lead to victory!")
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
@@ -3742,10 +3905,36 @@ async def battle_command(ctx, opponent: discord.Member = None):
     opponent_beast = await select_beast_for_battle(
         ctx, opponent, opponent_beasts, f"{opponent.display_name}'s")
     if not opponent_beast:
-        embed = discord.Embed(
-            title="❌ Battle Cancelled",
-            description=f"{opponent.display_name} didn't select a beast.",
-            color=0xFF0000)
+        embed = discord.Embed(color=0xDDA0DD)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 👤 ⚔️ **IMMORTAL BEAST ARENA** ⚔️ 👤\n" +
+                        "## 😞 **OPPONENT WITHDREW** 😞\n" +
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🏃 **Battle Withdrawal**",
+                        value=f"```yaml\n" +
+                        f"Challenger: {ctx.author.display_name}\n" +
+                        f"Opponent: {opponent.display_name}\n" +
+                        f"Status: Opponent didn't select a beast\n" +
+                        f"Result: Battle cancelled\n" + f"```",
+                        inline=False)
+        embed.add_field(
+            name="🤔 **What Happened?**",
+            value=f"⏰ **{opponent.display_name}** was asked to select a beast\n"
+            + "📱 They didn't respond within 30 seconds\n" +
+            "🚫 The battle was automatically cancelled\n" +
+            "💭 They might be busy or away from keyboard",
+            inline=False)
+        embed.add_field(
+            name="🔄 **Next Steps**",
+            value=f"💬 **Message them** to arrange a better time\n" +
+            f"🎯 **Try again later** when they're more active\n" +
+            f"👥 **Find another opponent** who's ready to battle\n" +
+            f"📊 Check `{ctx.bot.config.prefix}leaderboard` for active players",
+            inline=False)
+        embed.set_footer(
+            text="⚔️ IMMORTAL BEAST ARENA • Patience leads to epic battles!")
+        embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
 
@@ -3779,6 +3968,7 @@ async def battle_command(ctx, opponent: discord.Member = None):
     await ctx.bot.db.update_user(challenger_user)
     await ctx.bot.db.update_user(opponent_user)
 
+    # Enhanced Premium Battle Embed Design
     # Determine battle outcome and styling
     challenger_beast_obj = challenger_beast[1]
     opponent_beast_obj = opponent_beast[1]
@@ -3790,7 +3980,7 @@ async def battle_command(ctx, opponent: discord.Member = None):
             result_text = "**VICTORY**"
             victory_gradient = "🟢🟡🟠🔴"
         else:
-            color = 0xFF4500  # Dramatic defeat orange-red  
+            color = 0xFF4500  # Dramatic defeat orange-red
             title_icon = "💀"
             result_text = "**DEFEAT**"
             victory_gradient = "🔴🟠🟡🟢"
@@ -3818,43 +4008,44 @@ async def battle_command(ctx, opponent: discord.Member = None):
     embed.add_field(
         name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         value=f"# {title_icon} ⚔️ **IMMORTAL BEAST ARENA** ⚔️ {title_icon}\n" +
-              f"## {victory_gradient} {result_text} {victory_gradient[::-1]}\n" +
-              f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        inline=False
-    )
+        f"## {victory_gradient} {result_text} {victory_gradient[::-1]}\n" +
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        inline=False)
 
     # Fighter showcase with detailed stats
     embed.add_field(
         name="🥊 **COMBATANTS**",
-        value=f"### 🔵 {ctx.author.display_name}'s Champion\n" +
-              f"```ansi\n" +
-              f"\u001b[1;36m{challenger_beast_obj.name}\u001b[0m {challenger_beast_obj.rarity.emoji}\n" +
-              f"Level: {challenger_beast_obj.stats.level} | Power: {challenger_beast_obj.power_level:,}\n" +
-              f"ATK: {challenger_beast_obj.stats.attack} | DEF: {challenger_beast_obj.stats.defense} | SPD: {challenger_beast_obj.stats.speed}\n" +
-              f"```\n" +
-              f"### 🔴 {opponent.display_name}'s Champion\n" +
-              f"```ansi\n" +
-              f"\u001b[1;31m{opponent_beast_obj.name}\u001b[0m {opponent_beast_obj.rarity.emoji}\n" +
-              f"Level: {opponent_beast_obj.stats.level} | Power: {opponent_beast_obj.power_level:,}\n" +
-              f"ATK: {opponent_beast_obj.stats.attack} | DEF: {opponent_beast_obj.stats.defense} | SPD: {opponent_beast_obj.stats.speed}\n" +
-              f"```",
-        inline=False
-    )
+        value=f"### 🔵 {ctx.author.display_name}'s Champion\n" + f"```ansi\n" +
+        f"\u001b[1;36m{challenger_beast_obj.name}\u001b[0m {challenger_beast_obj.rarity.emoji}\n"
+        +
+        f"Level: {challenger_beast_obj.stats.level} | Power: {challenger_beast_obj.power_level:,}\n"
+        +
+        f"ATK: {challenger_beast_obj.stats.attack} | DEF: {challenger_beast_obj.stats.defense} | SPD: {challenger_beast_obj.stats.speed}\n"
+        + f"```\n" + f"### 🔴 {opponent.display_name}'s Champion\n" +
+        f"```ansi\n" +
+        f"\u001b[1;31m{opponent_beast_obj.name}\u001b[0m {opponent_beast_obj.rarity.emoji}\n"
+        +
+        f"Level: {opponent_beast_obj.stats.level} | Power: {opponent_beast_obj.power_level:,}\n"
+        +
+        f"ATK: {opponent_beast_obj.stats.attack} | DEF: {opponent_beast_obj.stats.defense} | SPD: {opponent_beast_obj.stats.speed}\n"
+        + f"```",
+        inline=False)
 
     # Battle analytics with enhanced visuals
-    battle_intensity = "🔥🔥🔥" if battle_result['turns'] > 15 else "🔥🔥" if battle_result['turns'] > 8 else "🔥"
-    battle_type = "LEGENDARY EPIC" if battle_result['turns'] > 20 else "EPIC CLASH" if battle_result['turns'] > 12 else "QUICK STRIKE" if battle_result['turns'] <= 5 else "STANDARD DUEL"
+    battle_intensity = "🔥🔥🔥" if battle_result[
+        'turns'] > 15 else "🔥🔥" if battle_result['turns'] > 8 else "🔥"
+    battle_type = "LEGENDARY EPIC" if battle_result[
+        'turns'] > 20 else "EPIC CLASH" if battle_result[
+            'turns'] > 12 else "QUICK STRIKE" if battle_result[
+                'turns'] <= 5 else "STANDARD DUEL"
 
-    embed.add_field(
-        name="📊 **BATTLE ANALYTICS**",
-        value=f"```yaml\n" +
-              f"Battle Type: {battle_type}\n" +
-              f"Intensity:  {battle_intensity}\n" +
-              f"Duration:   {battle_result['turns']} rounds\n" +
-              f"Combat ID:  #{challenger_user.total_battles:04d}\n" +
-              f"```",
-        inline=True
-    )
+    embed.add_field(name="📊 **BATTLE ANALYTICS**",
+                    value=f"```yaml\n" + f"Battle Type: {battle_type}\n" +
+                    f"Intensity:  {battle_intensity}\n" +
+                    f"Duration:   {battle_result['turns']} rounds\n" +
+                    f"Combat ID:  #{challenger_user.total_battles:04d}\n" +
+                    f"```",
+                    inline=True)
 
     # Championship results
     if winner_user:
@@ -3863,25 +4054,16 @@ async def battle_command(ctx, opponent: discord.Member = None):
 
         embed.add_field(
             name="👑 **CHAMPION**",
-            value=f"```diff\n" +
-                  f"+ {winner_user.display_name}\n" +
-                  f"+ {winner_beast}\n" +
-                  f"+ {winner_hp} HP Remaining\n" +
-                  f"```\n" +
-                  f"🏆 **Victory Achieved!**",
-            inline=True
-        )
+            value=f"```diff\n" + f"+ {winner_user.display_name}\n" +
+            f"+ {winner_beast}\n" + f"+ {winner_hp} HP Remaining\n" +
+            f"```\n" + f"🏆 **Victory Achieved!**",
+            inline=True)
     else:
-        embed.add_field(
-            name="⚖️ **STALEMATE**",
-            value=f"```css\n" +
-                  f"[Both Warriors Stand]\n" +
-                  f"[Honor Preserved]\n" +
-                  f"[Rematch Awaited]\n" +
-                  f"```\n" +
-                  f"🤝 **Honorable Draw**",
-            inline=True
-        )
+        embed.add_field(name="⚖️ **STALEMATE**",
+                        value=f"```css\n" + f"[Both Warriors Stand]\n" +
+                        f"[Honor Preserved]\n" + f"[Rematch Awaited]\n" +
+                        f"```\n" + f"🤝 **Honorable Draw**",
+                        inline=True)
 
     # Advanced health visualization
     def create_premium_health_bar(current_hp, max_hp, length=8):
@@ -3909,69 +4091,64 @@ async def battle_command(ctx, opponent: discord.Member = None):
     challenger_final_hp = battle_result['final_hp'][challenger_beast_obj.name]
     opponent_final_hp = battle_result['final_hp'][opponent_beast_obj.name]
 
-    challenger_health_bar = create_premium_health_bar(challenger_final_hp, challenger_beast_obj.stats.max_hp)
-    opponent_health_bar = create_premium_health_bar(opponent_final_hp, opponent_beast_obj.stats.max_hp)
+    challenger_health_bar = create_premium_health_bar(
+        challenger_final_hp, challenger_beast_obj.stats.max_hp)
+    opponent_health_bar = create_premium_health_bar(
+        opponent_final_hp, opponent_beast_obj.stats.max_hp)
 
-    challenger_hp_percent = int((challenger_final_hp / challenger_beast_obj.stats.max_hp) * 100) if challenger_beast_obj.stats.max_hp > 0 else 0
-    opponent_hp_percent = int((opponent_final_hp / opponent_beast_obj.stats.max_hp) * 100) if opponent_beast_obj.stats.max_hp > 0 else 0
+    challenger_hp_percent = int(
+        (challenger_final_hp / challenger_beast_obj.stats.max_hp) *
+        100) if challenger_beast_obj.stats.max_hp > 0 else 0
+    opponent_hp_percent = int(
+        (opponent_final_hp / opponent_beast_obj.stats.max_hp) *
+        100) if opponent_beast_obj.stats.max_hp > 0 else 0
 
     embed.add_field(
         name="❤️ **POST-BATTLE STATUS**",
         value=f"### {challenger_beast_obj.name}\n" +
-              f"{challenger_health_bar} `{challenger_hp_percent}%`\n" +
-              f"`{challenger_final_hp:,}/{challenger_beast_obj.stats.max_hp:,} HP`\n\n" +
-              f"### {opponent_beast_obj.name}\n" +
-              f"{opponent_health_bar} `{opponent_hp_percent}%`\n" +
-              f"`{opponent_final_hp:,}/{opponent_beast_obj.stats.max_hp:,} HP`",
-        inline=False
-    )
+        f"{challenger_health_bar} `{challenger_hp_percent}%`\n" +
+        f"`{challenger_final_hp:,}/{challenger_beast_obj.stats.max_hp:,} HP`\n\n"
+        + f"### {opponent_beast_obj.name}\n" +
+        f"{opponent_health_bar} `{opponent_hp_percent}%`\n" +
+        f"`{opponent_final_hp:,}/{opponent_beast_obj.stats.max_hp:,} HP`",
+        inline=False)
 
     # Dynamic rewards section
     if winner_user:
-        embed.add_field(
-            name="🎁 **SPOILS OF WAR**",
-            value="```diff\n" +
-                  "+ Victory Glory Earned\n" +
-                  "+ Battle Experience +XP\n" +
-                  "+ Win Streak Updated\n" +
-                  "```",
-            inline=True
-        )
+        embed.add_field(name="🎁 **SPOILS OF WAR**",
+                        value="```diff\n" + "+ Victory Glory Earned\n" +
+                        "+ Battle Experience +XP\n" +
+                        "+ Win Streak Updated\n" + "```",
+                        inline=True)
 
-        embed.add_field(
-            name="💔 **BATTLE SCARS**",
-            value="```diff\n" +
-                  "- Beast Requires Healing\n" +
-                  "- Defeat Recorded\n" +
-                  "- Comeback Training Needed\n" +
-                  "```",
-            inline=True
-        )
+        embed.add_field(name="💔 **BATTLE SCARS**",
+                        value="```diff\n" + "- Beast Requires Healing\n" +
+                        "- Defeat Recorded\n" +
+                        "- Comeback Training Needed\n" + "```",
+                        inline=True)
     else:
-        embed.add_field(
-            name="🏛️ **HALL OF HONOR**",
-            value="```yaml\n" +
-                  "Status: Mutual Respect\n" +
-                  "Result: Experience Gained\n" +
-                  "Future: Rematch Pending\n" +
-                  "```",
-            inline=False
-        )
+        embed.add_field(name="🏛️ **HALL OF HONOR**",
+                        value="```yaml\n" + "Status: Mutual Respect\n" +
+                        "Result: Experience Gained\n" +
+                        "Future: Rematch Pending\n" + "```",
+                        inline=False)
 
     # Premium footer with arena branding
     embed.add_field(
         name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        value=f"⚔️ **IMMORTAL BEAST ARENA** • Battle #{challenger_user.total_battles:04d} • {ctx.guild.name}\n" +
-              f"💡 *Use `!heal` to restore your beast • `!beasts` to view collection*\n" +
-              f"🏟️ *Next battle awaits in the arena...*",
-        inline=False
-    )
+        value=
+        f"⚔️ **IMMORTAL BEAST ARENA** • Battle #{challenger_user.total_battles:04d} • {ctx.guild.name}\n"
+        +
+        f"💡 *Use `!heal` to restore your beast • `!beasts` to view collection*\n"
+        + f"🏟️ *Next battle awaits in the arena...*",
+        inline=False)
 
     # Set author and timestamp for premium feel
     embed.set_author(
-        name=f"Battle Report: {ctx.author.display_name} vs {opponent.display_name}",
-        icon_url=ctx.author.display_avatar.url if hasattr(ctx.author, 'display_avatar') else None
-    )
+        name=
+        f"Battle Report: {ctx.author.display_name} vs {opponent.display_name}",
+        icon_url=ctx.author.display_avatar.url if hasattr(
+            ctx.author, 'display_avatar') else None)
 
     embed.timestamp = discord.utils.utcnow()
 
@@ -4265,6 +4442,7 @@ async def adoption_status(ctx):
 
 # Replace the existing setchannel and removechannel commands with these:
 
+
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
 async def set_spawn_channel(ctx):
@@ -4275,10 +4453,13 @@ async def set_spawn_channel(ctx):
         title="✅ Spawn Channel Set",
         description=f"{ctx.channel.mention} is now THE beast spawn channel!",
         color=0x00FF00)
-    embed.add_field(name="⚠️ Note", 
-                    value="This change is temporary. Update your environment variables for permanent change.",
-                    inline=False)
+    embed.add_field(
+        name="⚠️ Note",
+        value=
+        "This change is temporary. Update your environment variables for permanent change.",
+        inline=False)
     await ctx.send(embed=embed)
+
 
 @commands.command(name='removechannel')
 @commands.has_permissions(administrator=True)
@@ -4288,12 +4469,14 @@ async def remove_spawn_channel(ctx):
         ctx.bot.spawn_channel_id = 0  # Disable spawning
         embed = discord.Embed(
             title="✅ Spawn Channel Removed",
-            description=f"{ctx.channel.mention} is no longer the spawn channel.",
+            description=
+            f"{ctx.channel.mention} is no longer the spawn channel.",
             color=0x00FF00)
     else:
         embed = discord.Embed(
             title="❌ Not the Spawn Channel",
-            description=f"{ctx.channel.mention} is not the current spawn channel.",
+            description=
+            f"{ctx.channel.mention} is not the current spawn channel.",
             color=0xFF0000)
     await ctx.send(embed=embed)
 
@@ -4543,16 +4726,17 @@ async def manual_backup(ctx):
 
     await message.edit(embed=embed)
 
+
 # Add this command to help debug channel configuration:
+
 
 @commands.command(name='channels')
 @commands.has_permissions(administrator=True)
 async def show_channel_config(ctx):
     """Show current channel configuration (admin only)"""
-    embed = discord.Embed(
-        title="📋 Channel Configuration",
-        description="Current bot channel settings",
-        color=0x00AAFF)
+    embed = discord.Embed(title="📋 Channel Configuration",
+                          description="Current bot channel settings",
+                          color=0x00AAFF)
 
     # Battle Channels
     battle_channels = []
@@ -4563,24 +4747,24 @@ async def show_channel_config(ctx):
         else:
             battle_channels.append(f"Unknown ({channel_id})")
 
-    embed.add_field(
-        name="⚔️ Battle Channels",
-        value="\n".join(battle_channels) if battle_channels else "None configured",
-        inline=False)
+    embed.add_field(name="⚔️ Battle Channels",
+                    value="\n".join(battle_channels)
+                    if battle_channels else "None configured",
+                    inline=False)
 
     # Adopt Channel
     adopt_channel = ctx.bot.get_channel(ctx.bot.config.adopt_channel_id)
-    embed.add_field(
-        name="🐾 Adopt Channel",
-        value=f"#{adopt_channel.name}" if adopt_channel else f"Unknown ({ctx.bot.config.adopt_channel_id})",
-        inline=True)
+    embed.add_field(name="🐾 Adopt Channel",
+                    value=f"#{adopt_channel.name}" if adopt_channel else
+                    f"Unknown ({ctx.bot.config.adopt_channel_id})",
+                    inline=True)
 
     # Spawn Channel
     spawn_channel = ctx.bot.get_channel(ctx.bot.spawn_channel_id)
-    embed.add_field(
-        name="🌟 Spawn Channel", 
-        value=f"#{spawn_channel.name}" if spawn_channel else f"Unknown ({ctx.bot.spawn_channel_id})",
-        inline=True)
+    embed.add_field(name="🌟 Spawn Channel",
+                    value=f"#{spawn_channel.name}" if spawn_channel else
+                    f"Unknown ({ctx.bot.spawn_channel_id})",
+                    inline=True)
 
     # XP Channels
     xp_channels = []
@@ -4591,15 +4775,15 @@ async def show_channel_config(ctx):
         else:
             xp_channels.append(f"Unknown ({channel_id})")
 
-    embed.add_field(
-        name="💫 XP Channels",
-        value="\n".join(xp_channels[:5]) + (f"\n... and {len(xp_channels)-5} more" if len(xp_channels) > 5 else "") if xp_channels else "None configured",
-        inline=False)
+    embed.add_field(name="💫 XP Channels",
+                    value="\n".join(xp_channels[:5]) +
+                    (f"\n... and {len(xp_channels)-5} more" if len(xp_channels)
+                     > 5 else "") if xp_channels else "None configured",
+                    inline=False)
 
-    embed.add_field(
-        name="📍 Current Channel",
-        value=f"#{ctx.channel.name} ({ctx.channel.id})",
-        inline=False)
+    embed.add_field(name="📍 Current Channel",
+                    value=f"#{ctx.channel.name} ({ctx.channel.id})",
+                    inline=False)
 
     await ctx.send(embed=embed)
 
@@ -4683,8 +4867,8 @@ def main():
     bot.add_command(backup_status)
     bot.add_command(manual_backup)
     bot.add_command(clean_backups)
-    bot.add_command(set_spawn_channel)    # Uses the fixed version
-    bot.add_command(remove_spawn_channel) # Uses the fixed version
+    bot.add_command(set_spawn_channel)  # Uses the fixed version
+    bot.add_command(remove_spawn_channel)  # Uses the fixed version
     bot.add_command(show_channel_config)
 
     # ADD THESE NEW HEAL COMMANDS:
