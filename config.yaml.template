@@ -17,7 +17,7 @@ personal_role_id: YOUR_PERSONAL_ROLE_ID
 
 # XP System (replace with your actual channel IDs)  
 xp_chat_channel_ids: [YOUR_CHANNEL_ID_1, YOUR_CHANNEL_ID_2, YOUR_CHANNEL_ID_3, YOUR_CHANNEL_ID_4]
-xp_per_message: 5
+xp_per_message: 15
 xp_cooldown_seconds: 60
 
 # Starting resources

@@ -70,6 +70,15 @@ class BotConfig(BaseModel):
     personal_role_beast_limit: int = Field(
         default=10, description="Beast limit for personal role users")
 
+    battle_channel_ids: List[int] = Field(
+        default=[],
+        description="List of channel IDs where battles are allowed")
+    adopt_channel_id: int = Field(
+        default=0, description="Channel ID where adopt commands are allowed")
+    spawn_channel_id: int = Field(
+        default=0,
+        description="Channel ID where beasts spawn (single channel)")
+
     # Role IDs - UPDATED FOR MULTIPLE ROLES
     special_role_ids: List[int] = Field(
         default=[],
@@ -123,7 +132,10 @@ class BotConfig(BaseModel):
                 xp_chat_channel_ids=[
                     1393424880787259482, 1393626191935705198,
                     1394289930515124325, 1393163125850640414
-                ])
+                ],
+                battle_channel_ids=[1397783271961792604,1397783317163806730],
+                adopt_channel_id=1397783378618748948,
+                spawn_channel_id=1397783188394475520)
             with open(config_path, 'w') as f:
                 yaml.dump(default_config.model_dump(),
                           f,
@@ -143,6 +155,16 @@ class BotConfig(BaseModel):
         if not token:
             raise ValueError(
                 "DISCORD_BOT_TOKEN environment variable is required")
+
+        # Parse battle channel IDs from environment (comma-separated)
+        battle_channel_ids = []
+        battle_channels_env = os.getenv('BATTLE_CHANNEL_IDS', '')
+        if battle_channels_env:
+            battle_channel_ids = [
+                int(channel_id.strip())
+                for channel_id in battle_channels_env.split(',')
+                if channel_id.strip()
+            ]
 
         # Parse role IDs from environment (comma-separated)
         special_role_ids = []
@@ -197,7 +219,11 @@ class BotConfig(BaseModel):
             xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '60')),
             starting_beast_stones=int(
                 os.getenv('STARTING_BEAST_STONES', '1000')),
-            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')))
+            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')),
+            # ADD THESE MISSING LINES:
+            battle_channel_ids=battle_channel_ids,
+            adopt_channel_id=int(os.getenv('ADOPT_CHANNEL_ID', '1397783378618748948')),
+            spawn_channel_id=int(os.getenv('SPAWN_CHANNEL_ID', '1397783188394475520')))
 
 
 # Enums and Constants
@@ -1815,11 +1841,11 @@ class BeastTemplateManager:
 
         if rarity_weights is None:
             rarity_weights = {
-                BeastRarity.COMMON: 35,
-                BeastRarity.UNCOMMON: 30,
-                BeastRarity.RARE: 20,
-                BeastRarity.EPIC: 12,
-                BeastRarity.LEGENDARY: 3
+                BeastRarity.COMMON: 27,
+                BeastRarity.UNCOMMON: 40,
+                BeastRarity.RARE: 27,
+                BeastRarity.EPIC: 5,
+                BeastRarity.LEGENDARY: 1
             }
 
         available_templates = []
@@ -1949,7 +1975,10 @@ class ImmortalBeastsBot(commands.Bot):
         self.role_manager = UserRoleManager(config)
         self.battle_engine = BattleEngine()
         self.backup_manager = CloudBackupManager(config)
-        self.spawn_channels: Dict[int, Beast] = {}
+        self.spawn_channel_id = config.spawn_channel_id
+        self.current_spawned_beast: Optional[Beast] = None
+        self.catch_attempts: Dict[int, int] = {}  # user_id -> attempt_count
+        self.max_catch_attempts = 3
 
         # Setup logging
         logging.basicConfig(
@@ -2135,17 +2164,20 @@ class ImmortalBeastsBot(commands.Bot):
 
     # Replace your existing spawn_task with this improved version
 
-    @tasks.loop(minutes=1)  # Check every minute for more responsive timing
+    @tasks.loop(minutes=1)
     async def spawn_task(self):
-        """Improved beast spawning with proper timing and logging"""
+        """Improved beast spawning with single channel"""
         try:
-            if not self.spawn_channels:
-                self.logger.debug("No spawn channels configured")
+            if not self.spawn_channel_id:
+                self.logger.debug("No spawn channel configured")
                 return
 
-            # Check if it's time to spawn (using instance variable to track timing)
+            # Check if there's already a beast spawned
+            if self.current_spawned_beast is not None:
+                return  # Don't spawn if there's already one
+
+            # Check if it's time to spawn
             if not hasattr(self, '_next_spawn_time'):
-                # Initialize with random time between min and max interval
                 wait_minutes = random.randint(self.config.spawn_interval_min,
                                               self.config.spawn_interval_max)
                 self._next_spawn_time = datetime.datetime.now(
@@ -2154,18 +2186,16 @@ class ImmortalBeastsBot(commands.Bot):
                     f"Next beast spawn scheduled in {wait_minutes} minutes")
                 return
 
-            # Check if it's time to spawn
             if datetime.datetime.now() < self._next_spawn_time:
                 return  # Not time yet
 
             # Time to spawn!
-            channel_id = random.choice(list(self.spawn_channels.keys()))
-            channel = self.get_channel(channel_id)
-
+            channel = self.get_channel(self.spawn_channel_id)
             if channel:
                 await self.spawn_beast(channel)
                 self.logger.info(
-                    f"Beast spawned in channel: {channel.name} ({channel_id})")
+                    f"Beast spawned in channel: {channel.name} ({self.spawn_channel_id})"
+                )
 
                 # Schedule next spawn
                 wait_minutes = random.randint(self.config.spawn_interval_min,
@@ -2176,9 +2206,7 @@ class ImmortalBeastsBot(commands.Bot):
                     f"Next beast spawn scheduled in {wait_minutes} minutes")
             else:
                 self.logger.warning(
-                    f"Spawn channel {channel_id} not found, removing from spawn channels"
-                )
-                del self.spawn_channels[channel_id]
+                    f"Spawn channel {self.spawn_channel_id} not found")
 
         except Exception as e:
             self.logger.error(f"Spawn task failed: {e}")
@@ -2188,9 +2216,9 @@ class ImmortalBeastsBot(commands.Bot):
         try:
             rarity_weights = {
                 BeastRarity.COMMON: 50,
-                BeastRarity.UNCOMMON: 26,
-                BeastRarity.RARE: 16,
-                BeastRarity.EPIC: 7,
+                BeastRarity.UNCOMMON: 30,
+                BeastRarity.RARE: 17,
+                BeastRarity.EPIC: 2,
                 BeastRarity.LEGENDARY: 1,
                 BeastRarity.MYTHIC: 0.1
             }
@@ -2199,12 +2227,16 @@ class ImmortalBeastsBot(commands.Bot):
                 BeastRarity.MYTHIC, rarity_weights)
             beast = template.create_beast()
 
-            self.spawn_channels[channel.id] = beast
+            # Set the current spawned beast and reset catch attempts
+            self.current_spawned_beast = beast
+            self.catch_attempts.clear()
 
             embed = discord.Embed(
                 title="🌟 A Wild Beast Appeared! 🌟",
                 description=
-                f"**{beast.name}** has appeared!\n{beast.rarity.emoji}\n\nQuick! Use `{self.config.prefix}catch` to capture it!",
+                f"**{beast.name}** has appeared!\n{beast.rarity.emoji}\n\n"
+                f"Quick! Use `{self.config.prefix}catch` to capture it!\n"
+                f"**Each user gets {self.max_catch_attempts} attempts!**",
                 color=beast.rarity.color)
 
             embed.add_field(name="Rarity",
@@ -2228,8 +2260,9 @@ class ImmortalBeastsBot(commands.Bot):
 
             # Beast disappears after 5 minutes
             await asyncio.sleep(300)
-            if channel.id in self.spawn_channels:
-                del self.spawn_channels[channel.id]
+            if self.current_spawned_beast == beast:  # Still the same beast
+                self.current_spawned_beast = None
+                self.catch_attempts.clear()
                 embed = discord.Embed(
                     title="💨 Beast Fled",
                     description=f"The {beast.name} has disappeared...",
@@ -2237,6 +2270,49 @@ class ImmortalBeastsBot(commands.Bot):
                 await channel.send(embed=embed)
         except Exception as e:
             self.logger.error(f"Error spawning beast: {e}")
+
+
+def require_channel(channel_type: str):
+    """Decorator to restrict commands to specific channels"""
+
+    def decorator(func):
+
+        async def wrapper(ctx, *args, **kwargs):
+            config = ctx.bot.config
+
+            if channel_type == "battle":
+                if ctx.channel.id not in config.battle_channel_ids:
+                    embed = discord.Embed(
+                        title="❌ Wrong Channel",
+                        description=
+                        "This command can only be used in designated battle channels!",
+                        color=0xFF0000)
+                    await ctx.send(embed=embed)
+                    return
+            elif channel_type == "adopt":
+                if ctx.channel.id != config.adopt_channel_id:
+                    embed = discord.Embed(
+                        title="❌ Wrong Channel",
+                        description=
+                        "This command can only be used in the adoption channel!",
+                        color=0xFF0000)
+                    await ctx.send(embed=embed)
+                    return
+            elif channel_type == "spawn":
+                if ctx.channel.id != config.spawn_channel_id:
+                    embed = discord.Embed(
+                        title="❌ Wrong Channel",
+                        description=
+                        "This command can only be used in the beast spawn channel!",
+                        color=0xFF0000)
+                    await ctx.send(embed=embed)
+                    return
+
+            return await func(ctx, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 # Commands
@@ -2290,16 +2366,26 @@ async def daily_stone_reward(ctx):
 
 
 # SPAWN MANAGEMENT COMMANDS - ADD THESE TO YOUR COMMANDS SECTION
-
-
 @commands.command(name='forcespawn')
 @commands.has_permissions(administrator=True)
 async def force_spawn(ctx):
     """Manually force a beast to spawn (admin only)"""
-    if ctx.channel.id not in ctx.bot.spawn_channels:
+    # OLD CODE: Check if channel is in spawn_channels
+    # NEW CODE: Check if this is the designated spawn channel
+    if ctx.channel.id != ctx.bot.spawn_channel_id:
         embed = discord.Embed(
-            title="❌ Not a Spawn Channel",
-            description="This channel is not set up for beast spawning.",
+            title="❌ Not the Spawn Channel",
+            description="This is not the designated beast spawn channel.",
+            color=0xFF0000)
+        await ctx.send(embed=embed)
+        return
+
+    # Check if there's already a beast spawned
+    if ctx.bot.current_spawned_beast:
+        embed = discord.Embed(
+            title="❌ Beast Already Spawned",
+            description=
+            f"There's already a {ctx.bot.current_spawned_beast.name} waiting to be caught!",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -2324,32 +2410,31 @@ async def spawn_info(ctx):
     """Show spawn system information (admin only)"""
     embed = discord.Embed(title="📊 Beast Spawn Information", color=0x00AAFF)
 
-    # Spawn channels
-    if ctx.bot.spawn_channels:
-        channel_list = []
-        for channel_id in ctx.bot.spawn_channels.keys():
-            channel = ctx.bot.get_channel(channel_id)
-            if channel:
-                channel_list.append(f"#{channel.name}")
-            else:
-                channel_list.append(f"Unknown ({channel_id})")
-        embed.add_field(
-            name="🎯 Spawn Channels",
-            value="\n".join(channel_list) if channel_list else "None",
-            inline=False)
+    # OLD CODE: Multiple spawn channels
+    # NEW CODE: Single spawn channel
+    if ctx.bot.spawn_channel_id:
+        channel = ctx.bot.get_channel(ctx.bot.spawn_channel_id)
+        if channel:
+            embed.add_field(name="🎯 Spawn Channel",
+                            value=f"#{channel.name}",
+                            inline=False)
+        else:
+            embed.add_field(name="🎯 Spawn Channel",
+                            value=f"Unknown ({ctx.bot.spawn_channel_id})",
+                            inline=False)
     else:
-        embed.add_field(name="🎯 Spawn Channels",
-                        value="None configured",
+        embed.add_field(name="🎯 Spawn Channel",
+                        value="Not configured",
                         inline=False)
 
-    # Timing info
+    # Timing info - KEEP THIS UNCHANGED
     embed.add_field(
         name="⏰ Spawn Interval",
         value=
         f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} minutes",
         inline=True)
 
-    # Next spawn time
+    # Next spawn time - KEEP THIS UNCHANGED
     if hasattr(ctx.bot, '_next_spawn_time'):
         time_until_spawn = ctx.bot._next_spawn_time - datetime.datetime.now()
         minutes_left = int(time_until_spawn.total_seconds() / 60)
@@ -2366,19 +2451,37 @@ async def spawn_info(ctx):
                         value="Not scheduled",
                         inline=True)
 
-    # Current spawned beasts
-    active_spawns = []
-    for channel_id, beast in ctx.bot.spawn_channels.items():
-        if beast:  # There's a beast waiting to be caught
-            channel = ctx.bot.get_channel(channel_id)
-            if channel:
-                active_spawns.append(
-                    f"#{channel.name}: {beast.name} {beast.rarity.emoji}")
+    # OLD CODE: Current spawned beasts in multiple channels
+    # NEW CODE: Single current spawned beast
+    if ctx.bot.current_spawned_beast:
+        beast = ctx.bot.current_spawned_beast
+        embed.add_field(name="🐉 Current Wild Beast",
+                        value=f"{beast.name} {beast.rarity.emoji}",
+                        inline=False)
 
-    embed.add_field(
-        name="🐉 Active Wild Beasts",
-        value="\n".join(active_spawns) if active_spawns else "None",
-        inline=False)
+        # NEW: Show catch attempts for this beast
+        attempts_info = []
+        for user_id, attempts in ctx.bot.catch_attempts.items():
+            user = ctx.bot.get_user(user_id)
+            if user:
+                attempts_info.append(
+                    f"{user.display_name}: {attempts}/{ctx.bot.max_catch_attempts}"
+                )
+
+        if attempts_info:
+            embed.add_field(name="🎯 Catch Attempts",
+                            value="\n".join(attempts_info[:5]) +
+                            (f"\n... and {len(attempts_info)-5} more"
+                             if len(attempts_info) > 5 else ""),
+                            inline=False)
+        else:
+            embed.add_field(name="🎯 Catch Attempts",
+                            value="No attempts yet",
+                            inline=False)
+    else:
+        embed.add_field(name="🐉 Current Wild Beast",
+                        value="None",
+                        inline=False)
 
     await ctx.send(embed=embed)
 
@@ -2409,15 +2512,36 @@ async def next_spawn_time(ctx):
             f"Next wild beast will spawn in approximately **{minutes_left} minutes**",
             color=0x00AAFF)
 
-        embed.add_field(
-            name="📍 Spawn Locations",
-            value=f"{len(ctx.bot.spawn_channels)} channels configured",
-            inline=True)
+        # OLD CODE: Multiple spawn channels
+        # NEW CODE: Single spawn channel
+        if ctx.bot.spawn_channel_id:
+            channel = ctx.bot.get_channel(ctx.bot.spawn_channel_id)
+            if channel:
+                embed.add_field(name="📍 Spawn Location",
+                                value=f"#{channel.name}",
+                                inline=True)
+            else:
+                embed.add_field(name="📍 Spawn Location",
+                                value="Channel not found",
+                                inline=True)
+        else:
+            embed.add_field(name="📍 Spawn Location",
+                            value="Not configured",
+                            inline=True)
+
         embed.add_field(
             name="🎲 Spawn Range",
             value=
             f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} min",
             inline=True)
+
+    # NEW: Show if there's currently a beast to catch
+    if ctx.bot.current_spawned_beast:
+        beast = ctx.bot.current_spawned_beast
+        embed.add_field(
+            name="🐉 Current Beast Available",
+            value=f"{beast.name} {beast.rarity.emoji} - Go catch it!",
+            inline=False)
 
     await ctx.send(embed=embed)
 
@@ -2526,6 +2650,7 @@ async def restore_from_cloud(ctx):
 
 
 @commands.command(name='adopt')
+@require_channel("adopt")
 async def adopt_beast(ctx):
     """Adopt a random beast (available every 2 days)"""
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
@@ -3037,8 +3162,10 @@ async def heal_all_beasts(ctx):
 
     await ctx.send(embed=embed)
 
+
 # USER STATS AND LEADERBOARD COMMANDS
 # Add these commands to your main.py file (around line 2600, after your heal commands)
+
 
 @commands.command(name='checkbeasts', aliases=['userbeasts'])
 @commands.has_permissions(administrator=True)
@@ -3062,7 +3189,8 @@ async def check_user_beasts(ctx, user: discord.Member):
         # Create detailed embed
         embed = discord.Embed(
             title=f"🔍 {user.display_name}'s Beast Collection (Admin View)",
-            description=f"**{len(user_beasts)}/{beast_limit}** beasts | Requested by {ctx.author.display_name}",
+            description=
+            f"**{len(user_beasts)}/{beast_limit}** beasts | Requested by {ctx.author.display_name}",
             color=0x00AAFF)
 
         # Show up to 10 beasts in detail
@@ -3070,10 +3198,12 @@ async def check_user_beasts(ctx, user: discord.Member):
         for beast_id, beast in display_beasts:
             active_indicator = "🟢 " if beast_id == user_data.active_beast_id else ""
             embed.add_field(
-                name=f"{active_indicator}#{beast_id} {beast.name} {beast.rarity.emoji}",
-                value=f"**Level:** {beast.stats.level} | **HP:** {beast.stats.hp}/{beast.stats.max_hp}\n"
-                      f"**Power:** {beast.power_level} | **Location:** {beast.location}\n"
-                      f"**Caught:** {beast.caught_at.strftime('%Y-%m-%d')}",
+                name=
+                f"{active_indicator}#{beast_id} {beast.name} {beast.rarity.emoji}",
+                value=
+                f"**Level:** {beast.stats.level} | **HP:** {beast.stats.hp}/{beast.stats.max_hp}\n"
+                f"**Power:** {beast.power_level} | **Location:** {beast.location}\n"
+                f"**Caught:** {beast.caught_at.strftime('%Y-%m-%d')}",
                 inline=False)
 
         if len(user_beasts) > 10:
@@ -3086,8 +3216,8 @@ async def check_user_beasts(ctx, user: discord.Member):
         embed.add_field(
             name="📊 User Stats",
             value=f"**Beast Stones:** {user_data.spirit_stones:,}\n"
-                  f"**Total Catches:** {user_data.total_catches}\n"
-                  f"**Battles:** {user_data.total_battles} | **Win Rate:** {user_data.win_rate:.1f}%",
+            f"**Total Catches:** {user_data.total_catches}\n"
+            f"**Battles:** {user_data.total_battles} | **Win Rate:** {user_data.win_rate:.1f}%",
             inline=True)
 
         # Special privileges
@@ -3095,19 +3225,23 @@ async def check_user_beasts(ctx, user: discord.Member):
         if user_data.has_used_adopt_legend:
             privileges.append("✅ Used Legend Adopt")
         else:
-            privileges.append("⭐ Legend Adopt Available" if ctx.bot.role_manager.can_use_adopt_legend(user_role) else "❌ No Legend Access")
+            privileges.append(
+                "⭐ Legend Adopt Available" if ctx.bot.role_manager.
+                can_use_adopt_legend(user_role) else "❌ No Legend Access")
 
         if user_data.has_used_adopt_mythic:
             privileges.append("✅ Used Mythic Adopt")
         else:
-            privileges.append("🔥 Mythic Adopt Available" if ctx.bot.role_manager.can_use_adopt_mythic(user_role) else "❌ No Mythic Access")
+            privileges.append(
+                "🔥 Mythic Adopt Available" if ctx.bot.role_manager.
+                can_use_adopt_mythic(user_role) else "❌ No Mythic Access")
 
-        embed.add_field(
-            name="🎯 Special Privileges",
-            value="\n".join(privileges),
-            inline=True)
+        embed.add_field(name="🎯 Special Privileges",
+                        value="\n".join(privileges),
+                        inline=True)
 
-        embed.set_footer(text=f"Admin command used by {ctx.author.display_name}")
+        embed.set_footer(
+            text=f"Admin command used by {ctx.author.display_name}")
         await ctx.send(embed=embed)
 
     except Exception as e:
@@ -3131,30 +3265,28 @@ async def user_stats(ctx, user: discord.Member = None):
         user_role = ctx.bot.role_manager.get_user_role(user)
         beast_limit = ctx.bot.role_manager.get_beast_limit(user_role)
 
-        embed = discord.Embed(
-            title=f"📊 {user.display_name}'s Public Stats",
-            color=0x00AAFF)
+        embed = discord.Embed(title=f"📊 {user.display_name}'s Public Stats",
+                              color=0x00AAFF)
 
         # Beast collection stats
         embed.add_field(
             name="🐉 Beast Collection",
             value=f"**Total Beasts:** {len(user_beasts)}/{beast_limit}\n"
-                  f"**Total Catches:** {user_data.total_catches}",
+            f"**Total Catches:** {user_data.total_catches}",
             inline=True)
 
         # Battle stats
         embed.add_field(
             name="⚔️ Battle Record",
             value=f"**Total Battles:** {user_data.total_battles}\n"
-                  f"**Wins:** {user_data.wins} | **Losses:** {user_data.losses}\n"
-                  f"**Win Rate:** {user_data.win_rate:.1f}%",
+            f"**Wins:** {user_data.wins} | **Losses:** {user_data.losses}\n"
+            f"**Win Rate:** {user_data.win_rate:.1f}%",
             inline=True)
 
         # Economy stats
-        embed.add_field(
-            name="💰 Economy",
-            value=f"**Beast Stones:** {user_data.spirit_stones:,}",
-            inline=True)
+        embed.add_field(name="💰 Economy",
+                        value=f"**Beast Stones:** {user_data.spirit_stones:,}",
+                        inline=True)
 
         # Rarity breakdown
         if user_beasts:
@@ -3164,15 +3296,21 @@ async def user_stats(ctx, user: discord.Member = None):
 
             for _, beast in user_beasts:
                 rarity_name = beast.rarity.name.title()
-                rarity_counts[rarity_name] = rarity_counts.get(rarity_name, 0) + 1
+                rarity_counts[rarity_name] = rarity_counts.get(rarity_name,
+                                                               0) + 1
                 total_power += beast.power_level
                 highest_level = max(highest_level, beast.stats.level)
 
             rarity_text = []
-            for rarity in ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic']:
+            for rarity in [
+                    'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'
+            ]:
                 count = rarity_counts.get(rarity, 0)
                 if count > 0:
-                    stars = '⭐' * (['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'].index(rarity) + 1)
+                    stars = '⭐' * ([
+                        'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary',
+                        'Mythic'
+                    ].index(rarity) + 1)
                     rarity_text.append(f"{stars} {count}")
 
             embed.add_field(
@@ -3183,16 +3321,17 @@ async def user_stats(ctx, user: discord.Member = None):
             embed.add_field(
                 name="📈 Power Stats",
                 value=f"**Total Power:** {total_power:,}\n"
-                      f"**Highest Level:** {highest_level}\n"
-                      f"**Average Power:** {total_power // len(user_beasts) if user_beasts else 0:,}",
+                f"**Highest Level:** {highest_level}\n"
+                f"**Average Power:** {total_power // len(user_beasts) if user_beasts else 0:,}",
                 inline=True)
 
         # Account age
         account_age = datetime.datetime.now() - user_data.created_at
         embed.add_field(
             name="📅 Account Info",
-            value=f"**Playing Since:** {user_data.created_at.strftime('%Y-%m-%d')}\n"
-                  f"**Days Active:** {account_age.days}",
+            value=
+            f"**Playing Since:** {user_data.created_at.strftime('%Y-%m-%d')}\n"
+            f"**Days Active:** {account_age.days}",
             inline=True)
 
         # Active beast
@@ -3202,7 +3341,7 @@ async def user_stats(ctx, user: discord.Member = None):
                     embed.add_field(
                         name="🟢 Active Beast",
                         value=f"#{beast_id} {beast.name} {beast.rarity.emoji}\n"
-                              f"Level {beast.stats.level}",
+                        f"Level {beast.stats.level}",
                         inline=False)
                     break
 
@@ -3228,7 +3367,9 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
     elif limit < 3:
         limit = 3
 
-    valid_categories = ["beasts", "stones", "battles", "wins", "catches", "power"]
+    valid_categories = [
+        "beasts", "stones", "battles", "wins", "catches", "power"
+    ]
     if category.lower() not in valid_categories:
         embed = discord.Embed(
             title="❌ Invalid Category",
@@ -3261,25 +3402,27 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
                 discord_user = ctx.bot.get_user(user_row['user_id'])
                 if not discord_user:
                     try:
-                        discord_user = await ctx.bot.fetch_user(user_row['user_id'])
+                        discord_user = await ctx.bot.fetch_user(
+                            user_row['user_id'])
                     except:
                         continue
 
-                user_data = User(
-                    user_id=user_row['user_id'],
-                    username=user_row['username'],
-                    spirit_stones=user_row['spirit_stones'],
-                    total_catches=user_row['total_catches'],
-                    total_battles=user_row['total_battles'],
-                    wins=user_row['wins'],
-                    losses=user_row['losses'],
-                    created_at=datetime.datetime.fromisoformat(user_row['created_at'])
-                )
+                user_data = User(user_id=user_row['user_id'],
+                                 username=user_row['username'],
+                                 spirit_stones=user_row['spirit_stones'],
+                                 total_catches=user_row['total_catches'],
+                                 total_battles=user_row['total_battles'],
+                                 wins=user_row['wins'],
+                                 losses=user_row['losses'],
+                                 created_at=datetime.datetime.fromisoformat(
+                                     user_row['created_at']))
 
                 # Get beast count and total power for this user
-                user_beasts = await ctx.bot.db.get_user_beasts(user_data.user_id)
+                user_beasts = await ctx.bot.db.get_user_beasts(
+                    user_data.user_id)
                 beast_count = len(user_beasts)
-                total_power = sum(beast.power_level for _, beast in user_beasts)
+                total_power = sum(beast.power_level
+                                  for _, beast in user_beasts)
 
                 entry = {
                     'user': discord_user,
@@ -3307,22 +3450,26 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
             value_key = 'beast_count'
             value_suffix = " beasts"
         elif category == "stones":
-            leaderboard_data.sort(key=lambda x: x['user_data'].spirit_stones, reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].spirit_stones,
+                                  reverse=True)
             title = "💰 Beast Stones Leaderboard"
             value_key = 'spirit_stones'
             value_suffix = " stones"
         elif category == "battles":
-            leaderboard_data.sort(key=lambda x: x['user_data'].total_battles, reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].total_battles,
+                                  reverse=True)
             title = "⚔️ Total Battles Leaderboard"
             value_key = 'total_battles'
             value_suffix = " battles"
         elif category == "wins":
-            leaderboard_data.sort(key=lambda x: x['user_data'].wins, reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].wins,
+                                  reverse=True)
             title = "🏆 Battle Wins Leaderboard"
             value_key = 'wins'
             value_suffix = " wins"
         elif category == "catches":
-            leaderboard_data.sort(key=lambda x: x['user_data'].total_catches, reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].total_catches,
+                                  reverse=True)
             title = "🎯 Total Catches Leaderboard"
             value_key = 'total_catches'
             value_suffix = " catches"
@@ -3363,13 +3510,13 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
                 win_rate = entry['user_data'].win_rate
                 embed.add_field(
                     name=f"{medal} {entry['user'].display_name}",
-                    value=f"**{value:,}**{value_suffix}\n*{win_rate:.1f}% win rate*",
+                    value=
+                    f"**{value:,}**{value_suffix}\n*{win_rate:.1f}% win rate*",
                     inline=True)
             else:
-                embed.add_field(
-                    name=f"{medal} {entry['user'].display_name}",
-                    value=f"**{value:,}**{value_suffix}",
-                    inline=True)
+                embed.add_field(name=f"{medal} {entry['user'].display_name}",
+                                value=f"**{value:,}**{value_suffix}",
+                                inline=True)
 
         # Find requesting user's rank
         user_rank = None
@@ -3383,7 +3530,8 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
         elif user_rank:
             embed.set_footer(text=f"You're on the leaderboard! 🎉")
         else:
-            embed.set_footer(text="Start your journey to climb the leaderboard!")
+            embed.set_footer(
+                text="Start your journey to climb the leaderboard!")
 
         await ctx.send(embed=embed)
 
@@ -3407,17 +3555,22 @@ async def server_beast_stats(ctx):
         total_users = user_cursor.fetchone()['total_users']
 
         # Beast stats
-        beast_cursor = conn.execute('SELECT COUNT(*) as total_beasts FROM beasts')
+        beast_cursor = conn.execute(
+            'SELECT COUNT(*) as total_beasts FROM beasts')
         total_beasts = beast_cursor.fetchone()['total_beasts']
 
         # Battle stats
-        battle_cursor = conn.execute('SELECT SUM(total_battles) as total_battles, SUM(wins) as total_wins FROM users')
+        battle_cursor = conn.execute(
+            'SELECT SUM(total_battles) as total_battles, SUM(wins) as total_wins FROM users'
+        )
         battle_stats = battle_cursor.fetchone()
         total_battles = battle_stats['total_battles'] or 0
         total_wins = battle_stats['total_wins'] or 0
 
         # Stone stats
-        stone_cursor = conn.execute('SELECT SUM(spirit_stones) as total_stones, SUM(total_catches) as total_catches FROM users')
+        stone_cursor = conn.execute(
+            'SELECT SUM(spirit_stones) as total_stones, SUM(total_catches) as total_catches FROM users'
+        )
         stone_stats = stone_cursor.fetchone()
         total_stones = stone_stats['total_stones'] or 0
         total_catches = stone_stats['total_catches'] or 0
@@ -3435,7 +3588,8 @@ async def server_beast_stats(ctx):
 
         for user_row in user_rows:
             try:
-                user_beasts = await ctx.bot.db.get_user_beasts(user_row['user_id'])
+                user_beasts = await ctx.bot.db.get_user_beasts(
+                    user_row['user_id'])
                 for _, beast in user_beasts:
                     rarity_counts[beast.rarity.name] += 1
                     total_power += beast.power_level
@@ -3452,27 +3606,29 @@ async def server_beast_stats(ctx):
             color=0x00AAFF)
 
         # General stats
-        embed.add_field(
-            name="👥 Community Stats",
-            value=f"**Total Players:** {total_users:,}\n"
-                  f"**Total Beasts:** {total_beasts:,}\n"
-                  f"**Total Catches:** {total_catches:,}",
-            inline=True)
+        embed.add_field(name="👥 Community Stats",
+                        value=f"**Total Players:** {total_users:,}\n"
+                        f"**Total Beasts:** {total_beasts:,}\n"
+                        f"**Total Catches:** {total_catches:,}",
+                        inline=True)
 
         # Battle stats
         embed.add_field(
             name="⚔️ Battle Stats",
             value=f"**Total Battles:** {total_battles:,}\n"
-                  f"**Total Wins:** {total_wins:,}\n"
-                  f"**Average per User:** {(total_battles/total_users):.1f}" if total_users > 0 else "**Average per User:** 0",
+            f"**Total Wins:** {total_wins:,}\n"
+            f"**Average per User:** {(total_battles/total_users):.1f}"
+            if total_users > 0 else "**Average per User:** 0",
             inline=True)
 
         # Economy stats
         embed.add_field(
             name="💰 Economy Stats",
             value=f"**Total Beast Stones:** {total_stones:,}\n"
-                  f"**Average per User:** {(total_stones/total_users):,.0f}" if total_users > 0 else "**Average per User:** 0\n"
-                  f"**Stones per Beast:** {(total_stones/total_beasts):,.0f}" if total_beasts > 0 else "**Stones per Beast:** 0",
+            f"**Average per User:** {(total_stones/total_users):,.0f}"
+            if total_users > 0 else "**Average per User:** 0\n"
+            f"**Stones per Beast:** {(total_stones/total_beasts):,.0f}"
+            if total_beasts > 0 else "**Stones per Beast:** 0",
             inline=True)
 
         # Rarity breakdown
@@ -3480,32 +3636,39 @@ async def server_beast_stats(ctx):
             rarity_text = []
             for rarity in BeastRarity:
                 count = rarity_counts.get(rarity.name, 0)
-                percentage = (count / total_beasts) * 100 if total_beasts > 0 else 0
+                percentage = (count /
+                              total_beasts) * 100 if total_beasts > 0 else 0
                 if count > 0:
-                    rarity_text.append(f"{rarity.emoji} {count:,} ({percentage:.1f}%)")
+                    rarity_text.append(
+                        f"{rarity.emoji} {count:,} ({percentage:.1f}%)")
 
-            embed.add_field(
-                name="🌟 Rarity Distribution",
-                value="\n".join(rarity_text) if rarity_text else "No beasts found",
-                inline=True)
+            embed.add_field(name="🌟 Rarity Distribution",
+                            value="\n".join(rarity_text)
+                            if rarity_text else "No beasts found",
+                            inline=True)
 
             # Power stats
             embed.add_field(
                 name="💪 Power Stats",
                 value=f"**Total Server Power:** {total_power:,}\n"
-                      f"**Highest Level:** {highest_level}\n"
-                      f"**Average Power:** {(total_power/total_beasts):,.0f}",
+                f"**Highest Level:** {highest_level}\n"
+                f"**Average Power:** {(total_power/total_beasts):,.0f}",
                 inline=True)
 
         # Activity stats
         embed.add_field(
             name="📊 Activity",
-            value=f"**Beasts per Player:** {(total_beasts/total_users):.1f}" if total_users > 0 else "**Beasts per Player:** 0\n"
-                  f"**Catches per Player:** {(total_catches/total_users):.1f}" if total_users > 0 else "**Catches per Player:** 0\n"
-                  f"**Most Active:** Use `{ctx.bot.config.prefix}leaderboard catches`",
+            value=f"**Beasts per Player:** {(total_beasts/total_users):.1f}"
+            if total_users > 0 else "**Beasts per Player:** 0\n"
+            f"**Catches per Player:** {(total_catches/total_users):.1f}"
+            if total_users > 0 else "**Catches per Player:** 0\n"
+            f"**Most Active:** Use `{ctx.bot.config.prefix}leaderboard catches`",
             inline=True)
 
-        embed.set_footer(text=f"Data as of {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} | Use !leaderboard for rankings")
+        embed.set_footer(
+            text=
+            f"Data as of {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} | Use !leaderboard for rankings"
+        )
         await ctx.send(embed=embed)
 
     except Exception as e:
@@ -3514,8 +3677,10 @@ async def server_beast_stats(ctx):
             description=f"Failed to generate server statistics: {str(e)}",
             color=0xFF0000)
         await ctx.send(embed=embed)
-        
+
+
 @commands.command(name='battle', aliases=['fight'])
+@require_channel("battle")
 async def battle_command(ctx, opponent: discord.Member = None):
     """Challenge another user to a beast battle"""
     if opponent is None:
@@ -3653,6 +3818,7 @@ async def battle_command(ctx, opponent: discord.Member = None):
 
 
 @commands.command(name='adopt_legend', aliases=['adoptlegend'])
+@require_channel("adopt")
 async def adopt_legend_beast(ctx):
     """Adopt a guaranteed legendary beast (one-time use for special role users)"""
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
@@ -3745,6 +3911,7 @@ async def adopt_legend_beast(ctx):
 
 
 @commands.command(name='adopt_mythic', aliases=['adoptmythic'])
+@require_channel("adopt")
 async def adopt_mythic_beast(ctx):
     """Adopt a guaranteed mythic beast (one-time use for personal role users)"""
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
@@ -3935,40 +4102,46 @@ async def adoption_status(ctx):
     await ctx.send(embed=embed)
 
 
+# Replace the existing setchannel and removechannel commands with these:
+
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
 async def set_spawn_channel(ctx):
-    """Set current channel as a spawn channel"""
-    ctx.bot.spawn_channels[ctx.channel.id] = None
+    """Set current channel as THE spawn channel"""
+    # Update the bot's spawn channel (this would need a way to persist)
+    ctx.bot.spawn_channel_id = ctx.channel.id
     embed = discord.Embed(
         title="✅ Spawn Channel Set",
-        description=f"{ctx.channel.mention} is now a beast spawn channel!",
+        description=f"{ctx.channel.mention} is now THE beast spawn channel!",
         color=0x00FF00)
+    embed.add_field(name="⚠️ Note", 
+                    value="This change is temporary. Update your environment variables for permanent change.",
+                    inline=False)
     await ctx.send(embed=embed)
-
 
 @commands.command(name='removechannel')
 @commands.has_permissions(administrator=True)
 async def remove_spawn_channel(ctx):
-    """Remove current channel from spawn channels"""
-    if ctx.channel.id in ctx.bot.spawn_channels:
-        del ctx.bot.spawn_channels[ctx.channel.id]
+    """Remove current channel as spawn channel"""
+    if ctx.channel.id == ctx.bot.spawn_channel_id:
+        ctx.bot.spawn_channel_id = 0  # Disable spawning
         embed = discord.Embed(
             title="✅ Spawn Channel Removed",
-            description=f"{ctx.channel.mention} is no longer a spawn channel.",
+            description=f"{ctx.channel.mention} is no longer the spawn channel.",
             color=0x00FF00)
     else:
         embed = discord.Embed(
-            title="❌ Not a Spawn Channel",
-            description=f"{ctx.channel.mention} was not a spawn channel.",
+            title="❌ Not the Spawn Channel",
+            description=f"{ctx.channel.mention} is not the current spawn channel.",
             color=0xFF0000)
     await ctx.send(embed=embed)
 
 
 @commands.command(name='catch')
+@require_channel("spawn")
 async def catch_beast(ctx):
-    """Catch a spawned beast"""
-    if ctx.channel.id not in ctx.bot.spawn_channels:
+    """Catch a spawned beast (3 attempts per user per beast)"""
+    if not ctx.bot.current_spawned_beast:
         embed = discord.Embed(
             title="❌ No Beast Here",
             description="There's no beast to catch in this channel!",
@@ -3976,11 +4149,16 @@ async def catch_beast(ctx):
         await ctx.send(embed=embed)
         return
 
-    beast = ctx.bot.spawn_channels[ctx.channel.id]
-    if not beast:
+    beast = ctx.bot.current_spawned_beast
+    user_id = ctx.author.id
+
+    # Check catch attempts
+    current_attempts = ctx.bot.catch_attempts.get(user_id, 0)
+    if current_attempts >= ctx.bot.max_catch_attempts:
         embed = discord.Embed(
-            title="❌ No Beast Here",
-            description="There's no beast to catch in this channel!",
+            title="❌ No More Attempts",
+            description=
+            f"You've already used all {ctx.bot.max_catch_attempts} attempts to catch this beast!",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -3994,10 +4172,16 @@ async def catch_beast(ctx):
         embed = discord.Embed(
             title="❌ Beast Inventory Full",
             description=
-            f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
+            f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\n"
+            f"Use `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
+
+    # Increment attempt count
+    ctx.bot.catch_attempts[user_id] = current_attempts + 1
+    remaining_attempts = ctx.bot.max_catch_attempts - ctx.bot.catch_attempts[
+        user_id]
 
     # Calculate catch rate
     catch_rate = beast.rarity.catch_rate
@@ -4010,8 +4194,9 @@ async def catch_beast(ctx):
         user.total_catches += 1
         await ctx.bot.db.update_user(user)
 
-        # Remove from spawn channels
-        del ctx.bot.spawn_channels[ctx.channel.id]
+        # Remove spawned beast
+        ctx.bot.current_spawned_beast = None
+        ctx.bot.catch_attempts.clear()
 
         embed = discord.Embed(
             title="🎉 Beast Caught!",
@@ -4023,6 +4208,10 @@ async def catch_beast(ctx):
         embed.add_field(name="Power Level",
                         value=beast.power_level,
                         inline=True)
+        embed.add_field(
+            name="Attempt",
+            value=f"{current_attempts + 1}/{ctx.bot.max_catch_attempts}",
+            inline=True)
         embed.add_field(name="Catch Rate", value=f"{catch_rate}%", inline=True)
         embed.add_field(name="Total Beasts",
                         value=f"{len(user_beasts) + 1}/{beast_limit}",
@@ -4032,10 +4221,25 @@ async def catch_beast(ctx):
             title="💥 Beast Escaped!",
             description=f"**{beast.name}** broke free and escaped!",
             color=0xFF4444)
-        embed.add_field(name="Catch Rate", value=f"{catch_rate}%", inline=True)
-        embed.add_field(name="Better Luck Next Time!",
-                        value="Keep trying!",
+        embed.add_field(
+            name="Attempt",
+            value=f"{current_attempts + 1}/{ctx.bot.max_catch_attempts}",
+            inline=True)
+        embed.add_field(name="Remaining Attempts",
+                        value=remaining_attempts,
                         inline=True)
+        embed.add_field(name="Catch Rate", value=f"{catch_rate}%", inline=True)
+
+        if remaining_attempts > 0:
+            embed.add_field(
+                name="Keep Trying!",
+                value=f"You have {remaining_attempts} attempts left!",
+                inline=False)
+        else:
+            embed.add_field(
+                name="No More Attempts",
+                value="You've used all your attempts for this beast!",
+                inline=False)
 
     await ctx.send(embed=embed)
 
@@ -4178,6 +4382,66 @@ async def manual_backup(ctx):
 
     await message.edit(embed=embed)
 
+# Add this command to help debug channel configuration:
+
+@commands.command(name='channels')
+@commands.has_permissions(administrator=True)
+async def show_channel_config(ctx):
+    """Show current channel configuration (admin only)"""
+    embed = discord.Embed(
+        title="📋 Channel Configuration",
+        description="Current bot channel settings",
+        color=0x00AAFF)
+
+    # Battle Channels
+    battle_channels = []
+    for channel_id in ctx.bot.config.battle_channel_ids:
+        channel = ctx.bot.get_channel(channel_id)
+        if channel:
+            battle_channels.append(f"#{channel.name} ({channel_id})")
+        else:
+            battle_channels.append(f"Unknown ({channel_id})")
+
+    embed.add_field(
+        name="⚔️ Battle Channels",
+        value="\n".join(battle_channels) if battle_channels else "None configured",
+        inline=False)
+
+    # Adopt Channel
+    adopt_channel = ctx.bot.get_channel(ctx.bot.config.adopt_channel_id)
+    embed.add_field(
+        name="🐾 Adopt Channel",
+        value=f"#{adopt_channel.name}" if adopt_channel else f"Unknown ({ctx.bot.config.adopt_channel_id})",
+        inline=True)
+
+    # Spawn Channel
+    spawn_channel = ctx.bot.get_channel(ctx.bot.spawn_channel_id)
+    embed.add_field(
+        name="🌟 Spawn Channel", 
+        value=f"#{spawn_channel.name}" if spawn_channel else f"Unknown ({ctx.bot.spawn_channel_id})",
+        inline=True)
+
+    # XP Channels
+    xp_channels = []
+    for channel_id in ctx.bot.config.xp_chat_channel_ids:
+        channel = ctx.bot.get_channel(channel_id)
+        if channel:
+            xp_channels.append(f"#{channel.name}")
+        else:
+            xp_channels.append(f"Unknown ({channel_id})")
+
+    embed.add_field(
+        name="💫 XP Channels",
+        value="\n".join(xp_channels[:5]) + (f"\n... and {len(xp_channels)-5} more" if len(xp_channels) > 5 else "") if xp_channels else "None configured",
+        inline=False)
+
+    embed.add_field(
+        name="📍 Current Channel",
+        value=f"#{ctx.channel.name} ({ctx.channel.id})",
+        inline=False)
+
+    await ctx.send(embed=embed)
+
 
 @commands.command(name='cleanbackups')
 @commands.has_permissions(administrator=True)
@@ -4240,8 +4504,6 @@ def main():
     bot = ImmortalBeastsBot(config)
 
     # Add all commands to the bot
-    bot.add_command(set_spawn_channel)
-    bot.add_command(remove_spawn_channel)
     bot.add_command(catch_beast)
     bot.add_command(daily_stone_reward)
     bot.add_command(adopt_beast)
@@ -4260,6 +4522,9 @@ def main():
     bot.add_command(backup_status)
     bot.add_command(manual_backup)
     bot.add_command(clean_backups)
+    bot.add_command(set_spawn_channel)    # Uses the fixed version
+    bot.add_command(remove_spawn_channel) # Uses the fixed version
+    bot.add_command(show_channel_config)
 
     # ADD THESE NEW HEAL COMMANDS:
     bot.add_command(heal_beast)  # !heal command
@@ -4267,10 +4532,10 @@ def main():
 
     bot.add_command(manual_cloud_backup)  #mmmmm
     bot.add_command(restore_from_cloud)
-    bot.add_command(check_user_beasts)     # !checkbeasts
-    bot.add_command(user_stats)            # !userstats  
-    bot.add_command(leaderboard)           # !leaderboard
-    bot.add_command(server_beast_stats)    # !serverbeasts
+    bot.add_command(check_user_beasts)  # !checkbeasts
+    bot.add_command(user_stats)  # !userstats
+    bot.add_command(leaderboard)  # !leaderboard
+    bot.add_command(server_beast_stats)  # !serverbeasts
 
     try:
         bot.run(config.token)
@@ -4279,12 +4544,6 @@ def main():
     except Exception as e:
         print(f"Error running bot: {e}")
 
-
-if __name__ == "__main__":
-    if os.getenv('PORT'):  # Running on Render
-        run_bot_with_flask()
-    else:  # Running locally
-        main()
 
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
