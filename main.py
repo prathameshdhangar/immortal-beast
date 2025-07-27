@@ -2498,6 +2498,1052 @@ async def spawn_info(ctx):
     await ctx.send(embed=embed)
 
 
+@commands.command(name='sacrifice', aliases=['sac'])
+async def sacrifice_beast(ctx, beast_id: int):
+    """Sacrifice a beast to gain experience for your active beast"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+
+    # Check if user owns the beast
+    target_beast = None
+    target_beast_id = None
+    for bid, beast in user_beasts:
+        if bid == beast_id:
+            target_beast = beast
+            target_beast_id = bid
+            break
+
+    if not target_beast:
+        embed = discord.Embed(color=0xFF1744)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 🚫 ⚡ **IMMORTAL BEAST SHRINE** ⚡ 🚫\n"
+                        "## ❌ **BEAST NOT FOUND** ❌\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🔍 **Beast Registry Search**",
+                        value=f"```diff\n"
+                        f"- Beast ID: #{beast_id}\n"
+                        f"- Owner: {ctx.author.display_name}\n"
+                        f"- Status: NOT FOUND\n"
+                        f"- Collection: {len(user_beasts)} beasts\n"
+                        f"```",
+                        inline=False)
+        embed.add_field(
+            name="💡 **Available Actions**",
+            value=f"📋 `{ctx.bot.config.prefix}beasts` - View your collection\n"
+            f"🔍 `{ctx.bot.config.prefix}beast <id>` - Check beast details\n"
+            f"⚡ Use a valid beast ID from your collection",
+            inline=False)
+        embed.set_footer(
+            text="⚡ IMMORTAL BEAST SHRINE • Double-check your beast ID!")
+        embed.timestamp = discord.utils.utcnow()
+        await ctx.send(embed=embed)
+        return
+
+    # Check if trying to sacrifice active beast
+    if beast_id == user.active_beast_id:
+        embed = discord.Embed(color=0xFF6D00)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 🛡️ ⚡ **IMMORTAL BEAST SHRINE** ⚡ 🛡️\n"
+                        "## ⚠️ **ACTIVE BEAST PROTECTED** ⚠️\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🟢 **Active Beast Status**",
+                        value=f"```yaml\n"
+                        f"Protected Beast: {target_beast.name}\n"
+                        f"Beast ID: #{beast_id}\n"
+                        f"Status: CURRENTLY ACTIVE\n"
+                        f"Protection: SHRINE GUARDIAN\n"
+                        f"```",
+                        inline=False)
+        embed.add_field(
+            name="🔄 **Solution Required**",
+            value=f"**Step 1:** Choose a different active beast\n"
+            f"**Step 2:** Use `{ctx.bot.config.prefix}active <other_beast_id>`\n"
+            f"**Step 3:** Return here to perform sacrifice\n\n"
+            f"🛡️ **The shrine protects your active companion!**",
+            inline=False)
+        embed.set_footer(
+            text=
+            "⚡ IMMORTAL BEAST SHRINE • Your active beast cannot be sacrificed!"
+        )
+        embed.timestamp = discord.utils.utcnow()
+        await ctx.send(embed=embed)
+        return
+
+    # Calculate sacrifice value
+    sacrifice_xp = target_beast.stats.get_total_exp_value(target_beast.rarity)
+    beast_stones_reward = target_beast.stats.level * 10 + target_beast.rarity.value * 50
+
+    # Check if user has active beast for XP transfer
+    active_beast = None
+    active_beast_id = None
+    if user.active_beast_id:
+        for bid, beast in user_beasts:
+            if bid == user.active_beast_id and bid != beast_id:
+                active_beast = beast
+                active_beast_id = bid
+                break
+
+    # Enhanced Confirmation Embed with Epic Styling
+    embed = discord.Embed(color=0xFF3D00)
+
+    # Epic header with gradient effect
+    embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    value="# 🔥 ⚡ **IMMORTAL BEAST SHRINE** ⚡ 🔥\n"
+                    "## ⚠️ **SACRIFICE RITUAL INITIATED** ⚠️\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False)
+
+    # Dramatic beast showcase
+    power_bar = "🔴" * min(10, target_beast.power_level // 1000) or "⬛"
+    rarity_glow = "✨" * target_beast.rarity.value
+
+    embed.add_field(
+        name="🐉 **SACRIFICE CANDIDATE**",
+        value=f"### {rarity_glow} {target_beast.name} {rarity_glow}\n"
+        f"```ansi\n"
+        f"\u001b[1;31mBeast ID:\u001b[0m #{beast_id}\n"
+        f"\u001b[1;33mRarity:\u001b[0m {target_beast.rarity.name.title()} {target_beast.rarity.emoji}\n"
+        f"\u001b[1;36mLevel:\u001b[0m {target_beast.stats.level}\n"
+        f"\u001b[1;35mPower:\u001b[0m {target_beast.power_level:,}\n"
+        f"```\n"
+        f"**Power Level:** {power_bar}\n"
+        f"**Origin:** {target_beast.location}",
+        inline=False)
+
+    # Reward calculations with visual flair
+    stone_value_bars = "💎" * min(8, beast_stones_reward // 100) or "⬛"
+    xp_value_bars = "⚡" * min(8, sacrifice_xp // 500) or "⬛"
+
+    embed.add_field(
+        name="💰 **SHRINE REWARDS**",
+        value=f"```yaml\n"
+        f"Beast Stones: {beast_stones_reward:,}\n"
+        f"Value Tier:  {stone_value_bars}\n"
+        f"Formula:     (Level × 10) + (Rarity × 50)\n"
+        f"```\n"
+        f"💎 **{beast_stones_reward:,} Beast Stones** will be granted!",
+        inline=True)
+
+    # XP transfer visualization
+    if active_beast:
+        embed.add_field(name="📈 **SOUL TRANSFER**",
+                        value=f"```yaml\n"
+                        f"Experience:  {sacrifice_xp:,} XP\n"
+                        f"Power Tier:  {xp_value_bars}\n"
+                        f"Recipient:   {active_beast.name}\n"
+                        f"```\n"
+                        f"⚡ **Soul energy flows to {active_beast.name}!**",
+                        inline=True)
+    else:
+        embed.add_field(name="💀 **LOST ESSENCE**",
+                        value=f"```diff\n"
+                        f"- Experience: {sacrifice_xp:,} XP\n"
+                        f"- Status: NO ACTIVE BEAST\n"
+                        f"- Result: ESSENCE DISPERSES\n"
+                        f"```\n"
+                        f"💀 **Soul energy will be lost forever!**",
+                        inline=True)
+
+    # Dramatic warning section
+    embed.add_field(
+        name="⚠️ **RITUAL WARNING**",
+        value="```diff\n"
+        "+ Beast Stones: PERMANENT GAIN\n"
+        f"{'+ Soul Transfer: TO ACTIVE BEAST' if active_beast else '- Soul Energy: LOST FOREVER'}\n"
+        "- Beast Loss: IRREVERSIBLE\n"
+        "- Shrine Decision: FINAL\n"
+        "```",
+        inline=False)
+
+    # Epic action buttons with dramatic styling
+    embed.add_field(
+        name="🔥 **SHRINE RITUAL COMMANDS**",
+        value="### ✅ **COMPLETE SACRIFICE**\n"
+        "```ansi\n"
+        "\u001b[1;32m▶ Accept the shrine's power\u001b[0m\n"
+        "\u001b[1;32m▶ Claim beast stones\u001b[0m\n"
+        f"{'▶ Transfer soul to active beast' if active_beast else '▶ Release soul to the void'}\n"
+        "```\n"
+        "### ❌ **ABANDON RITUAL**\n"
+        "```ansi\n"
+        "\u001b[1;31m▶ Preserve your beast\u001b[0m\n"
+        "\u001b[1;31m▶ Leave shrine unchanged\u001b[0m\n"
+        "```",
+        inline=False)
+
+    # Premium footer
+    embed.add_field(
+        name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        value=
+        "⚡ **IMMORTAL BEAST SHRINE** • Ancient powers await your decision\n"
+        "🔥 *React within 30 seconds or the ritual will expire...*",
+        inline=False)
+
+    embed.set_author(name=f"Ritual Master: {ctx.author.display_name}",
+                     icon_url=ctx.author.display_avatar.url if hasattr(
+                         ctx.author, 'display_avatar') else None)
+    embed.timestamp = discord.utils.utcnow()
+
+    message = await ctx.send(embed=embed)
+    await message.add_reaction("✅")
+    await message.add_reaction("❌")
+
+    def check(reaction, react_user):
+        return (react_user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
+                and reaction.message.id == message.id)
+
+    try:
+        reaction, _ = await ctx.bot.wait_for('reaction_add',
+                                             timeout=30.0,
+                                             check=check)
+
+        if str(reaction.emoji) == "✅":
+            # Perform the sacrifice with enhanced success embed
+            success = await ctx.bot.db.delete_beast(beast_id)
+            if not success:
+                embed = discord.Embed(color=0xFF1744)
+                embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                value="# 💥 ⚡ **RITUAL FAILURE** ⚡ 💥\n"
+                                "## ❌ **SHRINE REJECTED SACRIFICE** ❌\n"
+                                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                inline=False)
+                embed.add_field(name="🔧 **System Error**",
+                                value="```diff\n"
+                                "- Database connection failed\n"
+                                "- Beast remains in collection\n"
+                                "- No changes made\n"
+                                "- Please try again\n"
+                                "```",
+                                inline=False)
+                await message.edit(embed=embed)
+                return
+
+            # Give beast stones
+            old_stones = user.spirit_stones
+            user.spirit_stones += beast_stones_reward
+
+            # Transfer XP to active beast if available
+            level_ups = []
+            if active_beast:
+                level_ups = active_beast.stats.add_exp(sacrifice_xp,
+                                                       active_beast.rarity)
+                await ctx.bot.db.update_beast(active_beast_id, active_beast)
+
+            # Clear active beast if it was sacrificed
+            if user.active_beast_id == beast_id:
+                user.active_beast_id = None
+
+            await ctx.bot.db.update_user(user)
+
+            # EPIC SUCCESS EMBED
+            embed = discord.Embed(color=0x00E676)
+
+            # Triumphant header
+            embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                            value="# 🌟 ⚡ **RITUAL COMPLETED** ⚡ 🌟\n"
+                            "## ✨ **SHRINE ACCEPTS SACRIFICE** ✨\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                            inline=False)
+
+            # Dramatic sacrifice summary
+            embed.add_field(
+                name="💀 **SACRIFICIAL OFFERING**",
+                value=f"```ansi\n"
+                f"\u001b[1;31m{target_beast.name}\u001b[0m {target_beast.rarity.emoji}\n"
+                f"Level: {target_beast.stats.level}\n"
+                f"Power: {target_beast.power_level:,}\n"
+                f"Status: SOUL RELEASED\n"
+                f"```\n"
+                f"🕊️ **{target_beast.name} has ascended to the eternal realm**",
+                inline=True)
+
+            # Rewards with visual impact
+            stone_gain_visual = "💎" * min(10, beast_stones_reward // 50)
+            embed.add_field(
+                name="💰 **SHRINE'S BLESSING**",
+                value=f"```diff\n"
+                f"+ Beast Stones: {beast_stones_reward:,}\n"
+                f"+ Previous Total: {old_stones:,}\n"
+                f"+ New Total: {user.spirit_stones:,}\n"
+                f"```\n"
+                f"{stone_gain_visual}\n"
+                f"💎 **Shrine grants {beast_stones_reward:,} blessed stones!**",
+                inline=True)
+
+            # XP transfer results
+            if active_beast and sacrifice_xp > 0:
+                xp_visual = "⚡" * min(8, len(level_ups) or 1)
+                embed.add_field(
+                    name="🔥 **SOUL TRANSFERENCE**",
+                    value=f"```ansi\n"
+                    f"\u001b[1;36mRecipient:\u001b[0m {active_beast.name}\n"
+                    f"\u001b[1;33mXP Gained:\u001b[0m {sacrifice_xp:,}\n"
+                    f"\u001b[1;35mNew Level:\u001b[0m {active_beast.stats.level}\n"
+                    f"```\n"
+                    f"{xp_visual}\n"
+                    f"⚡ **{active_beast.name} absorbs the spiritual essence!**",
+                    inline=False)
+
+                if level_ups:
+                    total_levels = len(level_ups)
+                    level_visual = "🎆" * min(5, total_levels)
+                    embed.add_field(
+                        name="🎉 **ASCENSION ACHIEVED**",
+                        value=f"```yaml\n"
+                        f"Level Breakthroughs: {total_levels}\n"
+                        f"Power Surge: MASSIVE\n"
+                        f"Evolution Status: ENHANCED\n"
+                        f"```\n"
+                        f"{level_visual}\n"
+                        f"🎆 **{active_beast.name} achieved {total_levels} level breakthrough(s)!**",
+                        inline=False)
+            else:
+                embed.add_field(
+                    name="💀 **ESSENCE DISPERSED**",
+                    value=f"```diff\n"
+                    f"- Soul Energy: {sacrifice_xp:,} XP\n"
+                    f"- Status: DISPERSED TO VOID\n"
+                    f"- Reason: NO ACTIVE VESSEL\n"
+                    f"```\n"
+                    f"💨 **The spiritual essence fades into the cosmos...**",
+                    inline=False)
+
+            # Collection status
+            remaining_beasts = len(user_beasts) - 1
+            collection_visual = "🐉" * min(8, remaining_beasts)
+            embed.add_field(
+                name="📊 **COLLECTION STATUS**",
+                value=f"```yaml\n"
+                f"Remaining Beasts: {remaining_beasts}\n"
+                f"Beast Stones: {user.spirit_stones:,}\n"
+                f"Shrine Status: RITUAL COMPLETE\n"
+                f"```\n"
+                f"{collection_visual}\n"
+                f"📦 **Your collection: {remaining_beasts} loyal companions remain**",
+                inline=False)
+
+            # Epic footer
+            embed.add_field(
+                name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                value="⚡ **IMMORTAL BEAST SHRINE** • The ritual is complete\n"
+                "🌟 *The shrine remembers your sacrifice and grants power*\n"
+                "🔥 *Your remaining beasts grow stronger from this blessing*",
+                inline=False)
+
+        else:
+            # Cancellation embed with style
+            embed = discord.Embed(color=0x9E9E9E)
+            embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                            value="# 🛡️ ⚡ **RITUAL ABANDONED** ⚡ 🛡️\n"
+                            "## 💙 **BEAST PRESERVED** 💙\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                            inline=False)
+            embed.add_field(
+                name="🐉 **Wise Decision**",
+                value=f"```ansi\n"
+                f"\u001b[1;36m{target_beast.name}\u001b[0m remains in your care\n"
+                f"The shrine respects your bond\n"
+                f"No sacrifice was made\n"
+                f"```\n"
+                f"💙 **Sometimes preservation is the greater wisdom**",
+                inline=False)
+            embed.add_field(
+                name="🔄 **Available Options**",
+                value=
+                f"🎯 Use `{ctx.bot.config.prefix}beast {beast_id}` to view details\n"
+                f"⚡ Use `{ctx.bot.config.prefix}active {beast_id}` to set as active\n"
+                f"💰 Return anytime when you're ready for sacrifice",
+                inline=False)
+
+    except asyncio.TimeoutError:
+        # Timeout embed with mystical theme
+        embed = discord.Embed(color=0x616161)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# ⏳ ⚡ **RITUAL EXPIRED** ⚡ ⏳\n"
+                        "## 🌙 **SHRINE GROWS SILENT** 🌙\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(
+            name="⏰ **Time's Judgment**",
+            value=f"```yaml\n"
+            f"Ritual Duration: 30 seconds\n"
+            f"Response: NONE RECEIVED\n"
+            f"Shrine Status: DORMANT\n"
+            f"Beast Status: SAFE\n"
+            f"```\n"
+            f"🌙 **The shrine's power fades... {target_beast.name} remains protected**",
+            inline=False)
+        embed.add_field(
+            name="🔮 **Ancient Wisdom**",
+            value=
+            "*The shrine only accepts offerings from those who act with certainty*\n"
+            f"💫 Return when you're ready to make a decisive choice",
+            inline=False)
+
+    embed.set_author(name=f"Shrine Ritual: {ctx.author.display_name}",
+                     icon_url=ctx.author.display_avatar.url if hasattr(
+                         ctx.author, 'display_avatar') else None)
+    embed.timestamp = discord.utils.utcnow()
+
+    await message.edit(embed=embed)
+
+
+@commands.command(name='release', aliases=['free'])
+async def release_beast(ctx, beast_id: int):
+    """Release a beast without any rewards (quick inventory management)"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+
+    # Check if user owns the beast
+    target_beast = None
+    for bid, beast in user_beasts:
+        if bid == beast_id:
+            target_beast = beast
+            break
+
+    if not target_beast:
+        embed = discord.Embed(color=0xFF5722)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 🌿 🕊️ **SANCTUARY GATES** 🕊️ 🌿\n"
+                        "## ❌ **BEAST NOT FOUND** ❌\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="🔍 **Sanctuary Search**",
+                        value=f"```diff\n"
+                        f"- Seeking: Beast #{beast_id}\n"
+                        f"- Owner: {ctx.author.display_name}\n"
+                        f"- Result: NOT IN COLLECTION\n"
+                        f"```",
+                        inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    # Check if trying to release active beast
+    if beast_id == user.active_beast_id:
+        embed = discord.Embed(color=0xFF8F00)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# 🛡️ 🕊️ **SANCTUARY GATES** 🕊️ 🛡️\n"
+                        "## ⚠️ **ACTIVE COMPANION PROTECTED** ⚠️\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(name="💙 **Bonded Guardian**",
+                        value=f"```yaml\n"
+                        f"Active Beast: {target_beast.name}\n"
+                        f"Bond Status: CURRENTLY ACTIVE\n"
+                        f"Protection: SANCTUARY GUARDIAN\n"
+                        f"```\n"
+                        f"🛡️ **Your active companion cannot be released!**",
+                        inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    # Cool Release Confirmation
+    embed = discord.Embed(color=0x4CAF50)
+
+    # Nature-themed header
+    embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    value="# 🌿 🕊️ **SANCTUARY RELEASE** 🕊️ 🌿\n"
+                    "## 💚 **RETURN TO THE WILD** 💚\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False)
+
+    # Beast showcase with nature theme
+    freedom_visual = "🍃" * target_beast.rarity.value
+    embed.add_field(
+        name="🐉 **BEAST SEEKING FREEDOM**",
+        value=f"### {freedom_visual} {target_beast.name} {freedom_visual}\n"
+        f"```ansi\n"
+        f"\u001b[1;32mBeast ID:\u001b[0m #{beast_id}\n"
+        f"\u001b[1;36mRarity:\u001b[0m {target_beast.rarity.name.title()} {target_beast.rarity.emoji}\n"
+        f"\u001b[1;33mLevel:\u001b[0m {target_beast.stats.level}\n"
+        f"\u001b[1;35mOrigin:\u001b[0m {target_beast.location}\n"
+        f"```\n"
+        f"🌲 **Yearns to return to {target_beast.location}**",
+        inline=False)
+
+    # Release terms with clear styling
+    embed.add_field(name="📜 **SANCTUARY TERMS**",
+                    value="```diff\n"
+                    "- NO Beast Stones Granted\n"
+                    "- NO Experience Transfer\n"
+                    "- NO Shrine Rewards\n"
+                    "+ Instant Inventory Space\n"
+                    "+ Peaceful Liberation\n"
+                    "+ Beast Returns to Wild\n"
+                    "```",
+                    inline=True)
+
+    embed.add_field(name="🌍 **Freedom Declaration**",
+                    value="```yaml\n"
+                    "Release Type: Peaceful\n"
+                    "Destination: Natural Habitat\n"
+                    "Status: Immediate Liberation\n"
+                    "Rewards: None (Pure Freedom)\n"
+                    "```",
+                    inline=True)
+
+    # Action options with nature styling
+    embed.add_field(name="🕊️ **SANCTUARY CHOICE**",
+                    value="### ✅ **GRANT FREEDOM**\n"
+                    "```ansi\n"
+                    "\u001b[1;32m▶ Release to natural habitat\u001b[0m\n"
+                    "\u001b[1;32m▶ No rewards granted\u001b[0m\n"
+                    "\u001b[1;32m▶ Instant liberation\u001b[0m\n"
+                    "```\n"
+                    "### ❌ **MAINTAIN BOND**\n"
+                    "```ansi\n"
+                    "\u001b[1;31m▶ Keep in collection\u001b[0m\n"
+                    "\u001b[1;31m▶ Continue companionship\u001b[0m\n"
+                    "```",
+                    inline=False)
+
+    # Quick footer
+    embed.add_field(
+        name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        value=
+        "🕊️ **SANCTUARY GATES** • Choose quickly, the gates close in 15 seconds\n"
+        "🌿 *True freedom requires no rewards, only compassion*",
+        inline=False)
+
+    embed.set_author(name=f"Sanctuary Keeper: {ctx.author.display_name}",
+                     icon_url=ctx.author.display_avatar.url if hasattr(
+                         ctx.author, 'display_avatar') else None)
+    embed.timestamp = discord.utils.utcnow()
+
+    message = await ctx.send(embed=embed)
+    await message.add_reaction("✅")
+    await message.add_reaction("❌")
+
+    def check(reaction, react_user):
+        return (react_user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
+                and reaction.message.id == message.id)
+
+    try:
+        reaction, _ = await ctx.bot.wait_for('reaction_add',
+                                             timeout=15.0,
+                                             check=check)
+
+        if str(reaction.emoji) == "✅":
+            success = await ctx.bot.db.delete_beast(beast_id)
+            if success:
+                if user.active_beast_id == beast_id:
+                    user.active_beast_id = None
+                    await ctx.bot.db.update_user(user)
+
+                # Beautiful success embed
+                embed = discord.Embed(color=0x66BB6A)
+                embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                value="# 🌟 🕊️ **FREEDOM GRANTED** 🕊️ 🌟\n"
+                                "## 💚 **SANCTUARY BLESSING** 💚\n"
+                                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                inline=False)
+                embed.add_field(
+                    name="🌿 **Liberation Complete**",
+                    value=f"```ansi\n"
+                    f"\u001b[1;32m{target_beast.name}\u001b[0m soars toward freedom\n"
+                    f"Destination: {target_beast.location}\n"
+                    f"Status: SUCCESSFULLY RELEASED\n"
+                    f"```\n"
+                    f"🕊️ **{target_beast.name} spreads wings toward {target_beast.location}**\n"
+                    f"🌲 **The sanctuary gates close gently behind them**",
+                    inline=False)
+                embed.add_field(name="📊 **Collection Update**",
+                                value=f"```yaml\n"
+                                f"Remaining Beasts: {len(user_beasts) - 1}\n"
+                                f"Freedom Granted: Peacefully\n"
+                                f"Sanctuary Status: Mission Complete\n"
+                                f"```",
+                                inline=False)
+            else:
+                embed = discord.Embed(color=0xFF5722)
+                embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                value="# ❌ 🕊️ **RELEASE FAILED** 🕊️ ❌\n"
+                                "## 🚫 **SANCTUARY ERROR** 🚫\n"
+                                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                inline=False)
+                embed.add_field(name="🔧 **System Failure**",
+                                value="```diff\n"
+                                "- Gate mechanism jammed\n"
+                                "- Beast remains in collection\n"
+                                "- Please try again\n"
+                                "```",
+                                inline=False)
+        else:
+            # Peaceful cancellation
+            embed = discord.Embed(color=0x81C784)
+            embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                            value="# 💙 🕊️ **BOND PRESERVED** 🕊️ 💙\n"
+                            "## 🤝 **COMPANIONSHIP CONTINUES** 🤝\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                            inline=False)
+            embed.add_field(
+                name="💝 **Wise Choice**",
+                value=f"```ansi\n"
+                f"\u001b[1;36m{target_beast.name}\u001b[0m remains by your side\n"
+                f"Your bond grows stronger\n"
+                f"No separation occurred\n"
+                f"```\n"
+                f"💙 **{target_beast.name} appreciates your loyalty**",
+                inline=False)
+
+    except asyncio.TimeoutError:
+        embed = discord.Embed(color=0xA5D6A7)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        value="# ⏰ 🕊️ **GATES CLOSED** 🕊️ ⏰\n"
+                        "## 🌙 **SANCTUARY RESTS** 🌙\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        inline=False)
+        embed.add_field(
+            name="🌙 **Time's Wisdom**",
+            value=f"```yaml\n"
+            f"Decision Window: 15 seconds\n"
+            f"Response: NONE RECEIVED\n"
+            f"Beast Status: SAFELY PRESERVED\n"
+            f"```\n"
+            f"🕊️ **{target_beast.name} remains under your protection**",
+            inline=False)
+
+    embed.set_author(name=f"Sanctuary Record: {ctx.author.display_name}",
+                     icon_url=ctx.author.display_avatar.url if hasattr(
+                         ctx.author, 'display_avatar') else None)
+    embed.timestamp = discord.utils.utcnow()
+
+    await message.edit(embed=embed)
+
+
+# ADD THIS POWERFUL DEBUGGING COMMAND:
+
+
+@commands.command(name='addxpchannel')
+@commands.has_permissions(administrator=True)
+async def add_xp_channel(ctx, channel: discord.TextChannel = None):
+    """Add a channel to XP gain list (admin only)"""
+    if channel is None:
+        channel = ctx.channel
+
+    if channel.id in ctx.bot.config.xp_chat_channel_ids:
+        embed = discord.Embed(
+            title="⚠️ Already Added",
+            description=f"{channel.mention} is already in the XP channel list",
+            color=0xFFAA00)
+    else:
+        ctx.bot.config.xp_chat_channel_ids.append(channel.id)
+        embed = discord.Embed(
+            title="✅ XP Channel Added",
+            description=f"{channel.mention} has been added to XP channels",
+            color=0x00FF00)
+        embed.add_field(
+            name="⚠️ Note",
+            value=
+            "This change is temporary. Update environment variables for permanent change.",
+            inline=False)
+
+    await ctx.send(embed=embed)
+
+
+# ADD THESE COMMANDS if you don't have them:
+
+
+@commands.command(name='xpconfig')
+@commands.has_permissions(administrator=True)
+async def xp_config(ctx):
+    """Show detailed XP system configuration (admin only)"""
+    embed = discord.Embed(title="⚙️ XP System Configuration",
+                          description="Detailed XP system settings",
+                          color=0x00AAFF)
+
+    # Basic settings
+    embed.add_field(
+        name="📊 Basic Settings",
+        value=f"**XP per Message:** {ctx.bot.config.xp_per_message}\n"
+        f"**Cooldown:** {ctx.bot.config.xp_cooldown_seconds} seconds\n"
+        f"**Min Message Length:** 4 characters",
+        inline=False)
+
+    # XP Channels with validation
+    valid_channels = []
+    invalid_channels = []
+
+    for channel_id in ctx.bot.config.xp_chat_channel_ids:
+        channel = ctx.bot.get_channel(channel_id)
+        if channel:
+            valid_channels.append(f"✅ #{channel.name} ({channel_id})")
+        else:
+            invalid_channels.append(f"❌ Unknown Channel ({channel_id})")
+
+    if valid_channels:
+        embed.add_field(name="📺 Valid XP Channels",
+                        value="\n".join(valid_channels[:10]) +
+                        (f"\n... and {len(valid_channels)-10} more"
+                         if len(valid_channels) > 10 else ""),
+                        inline=False)
+
+    if invalid_channels:
+        embed.add_field(name="⚠️ Invalid XP Channels",
+                        value="\n".join(invalid_channels[:5]) +
+                        (f"\n... and {len(invalid_channels)-5} more"
+                         if len(invalid_channels) > 5 else ""),
+                        inline=False)
+
+    # Statistics
+    try:
+        conn = ctx.bot.db._get_connection()
+
+        # Count users with active beasts
+        cursor = conn.execute(
+            'SELECT COUNT(*) as count FROM users WHERE active_beast_id IS NOT NULL'
+        )
+        active_users = cursor.fetchone()['count']
+
+        # Count total users
+        cursor = conn.execute('SELECT COUNT(*) as count FROM users')
+        total_users = cursor.fetchone()['count']
+
+        # Count users who have gained XP
+        cursor = conn.execute(
+            'SELECT COUNT(*) as count FROM users WHERE last_xp_gain IS NOT NULL'
+        )
+        xp_users = cursor.fetchone()['count']
+
+        conn.close()
+
+        embed.add_field(
+            name="📈 Usage Statistics",
+            value=f"**Total Users:** {total_users}\n"
+            f"**Users with Active Beasts:** {active_users}\n"
+            f"**Users Who Gained XP:** {xp_users}\n"
+            f"**Active Beast Rate:** {(active_users/total_users*100):.1f}%"
+            if total_users > 0 else "**Active Beast Rate:** 0%",
+            inline=True)
+
+    except Exception as e:
+        embed.add_field(name="📈 Usage Statistics",
+                        value=f"Error retrieving stats: {str(e)}",
+                        inline=True)
+
+    embed.add_field(name="🔧 Troubleshooting",
+                    value="**Common Issues:**\n"
+                    "• Users don't have active beasts set\n"
+                    "• Cooldown too restrictive (60s default)\n"
+                    "• Invalid channel configuration\n"
+                    "• Bot permissions in XP channels",
+                    inline=False)
+
+    await ctx.send(embed=embed)
+
+
+@commands.command(name='xpstatus', aliases=['xpcheck'])
+async def xp_status(ctx):
+    """Check your XP gain status and settings"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    embed = discord.Embed(
+        title="⚡ XP System Status",
+        description=f"XP gain analysis for {ctx.author.display_name}",
+        color=0x00AAFF)
+
+    # Channel check
+    current_channel_valid = ctx.channel.id in ctx.bot.config.xp_chat_channel_ids
+    embed.add_field(
+        name="📍 Current Channel",
+        value=f"**{ctx.channel.name}**\n"
+        f"XP Enabled: {'✅ Yes' if current_channel_valid else '❌ No'}",
+        inline=True)
+
+    # Active beast check
+    if user.active_beast_id:
+        user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+        active_beast = None
+        for beast_id, beast in user_beasts:
+            if beast_id == user.active_beast_id:
+                active_beast = beast
+                break
+
+        if active_beast:
+            embed.add_field(
+                name="🐉 Active Beast",
+                value=f"**{active_beast.name}** {active_beast.rarity.emoji}\n"
+                f"Level {active_beast.stats.level} | ID: #{user.active_beast_id}",
+                inline=True)
+        else:
+            embed.add_field(
+                name="🐉 Active Beast",
+                value=
+                "❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
+                inline=True)
+    else:
+        embed.add_field(
+            name="🐉 Active Beast",
+            value="❌ **NONE SET**\nSet an active beast to gain XP!",
+            inline=True)
+
+    # Cooldown check
+    if user.last_xp_gain:
+        time_since_last = datetime.datetime.now() - user.last_xp_gain
+        cooldown_remaining = ctx.bot.config.xp_cooldown_seconds - time_since_last.total_seconds(
+        )
+
+        if cooldown_remaining > 0:
+            embed.add_field(
+                name="⏰ XP Cooldown",
+                value=
+                f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
+                inline=False)
+        else:
+            embed.add_field(name="⏰ XP Cooldown",
+                            value="✅ **Ready to gain XP**\nNo cooldown active",
+                            inline=False)
+    else:
+        embed.add_field(name="⏰ XP Cooldown",
+                        value="✅ **Ready to gain XP**\nFirst time gaining XP",
+                        inline=False)
+
+    # XP settings
+    embed.add_field(
+        name="⚙️ XP Settings",
+        value=f"**XP per Message:** {ctx.bot.config.xp_per_message}\n"
+        f"**Cooldown:** {ctx.bot.config.xp_cooldown_seconds}s\n"
+        f"**Message Length:** Must be >3 characters",
+        inline=True)
+
+    # Valid XP channels (show first few)
+    xp_channels = []
+    for channel_id in ctx.bot.config.xp_chat_channel_ids[:3]:
+        channel = ctx.bot.get_channel(channel_id)
+        if channel:
+            xp_channels.append(f"#{channel.name}")
+        else:
+            xp_channels.append(f"Unknown ({channel_id})")
+
+    channel_text = "\n".join(xp_channels)
+    if len(ctx.bot.config.xp_chat_channel_ids) > 3:
+        channel_text += f"\n... and {len(ctx.bot.config.xp_chat_channel_ids) - 3} more"
+
+    embed.add_field(name="📺 XP Channels",
+                    value=channel_text if xp_channels else "None configured",
+                    inline=True)
+
+    # Recommendations
+    recommendations = []
+    if not user.active_beast_id:
+        recommendations.append(
+            f"🎯 Use `{ctx.bot.config.prefix}active <beast_id>` to set active beast"
+        )
+    if not current_channel_valid:
+        recommendations.append("📍 Move to an XP-enabled channel")
+    if user.last_xp_gain and cooldown_remaining > 0:
+        recommendations.append(
+            f"⏰ Wait {int(cooldown_remaining)}s for cooldown")
+
+    if recommendations:
+        embed.add_field(name="💡 Recommendations",
+                        value="\n".join(recommendations),
+                        inline=False)
+    else:
+        embed.add_field(
+            name="✅ Status",
+            value="Everything looks good! Start chatting to gain XP!",
+            inline=False)
+
+    await ctx.send(embed=embed)
+
+
+@commands.command(name='removexp')
+@commands.has_permissions(administrator=True)
+async def remove_xp_channel(ctx, channel: discord.TextChannel = None):
+    """Remove a channel from XP gain list (admin only)"""
+    if channel is None:
+        channel = ctx.channel
+
+    if channel.id in ctx.bot.config.xp_chat_channel_ids:
+        ctx.bot.config.xp_chat_channel_ids.remove(channel.id)
+        embed = discord.Embed(
+            title="✅ XP Channel Removed",
+            description=f"{channel.mention} has been removed from XP channels",
+            color=0x00FF00)
+    else:
+        embed = discord.Embed(
+            title="⚠️ Not Found",
+            description=f"{channel.mention} is not in the XP channel list",
+            color=0xFFAA00)
+
+    await ctx.send(embed=embed)
+
+
+# REPLACE the existing fixcooldown command with this enhanced version:
+
+
+@commands.command(name='fixcooldown', aliases=['setcooldown'])
+@commands.has_permissions(administrator=True)
+async def fix_xp_cooldown(ctx, new_cooldown: int = None):
+    """Temporarily adjust XP cooldown (admin only)"""
+
+    # If no cooldown provided, show current setting
+    if new_cooldown is None:
+        embed = discord.Embed(
+            title="⚙️ Current XP Cooldown",
+            description=
+            f"Current XP cooldown: **{ctx.bot.config.xp_cooldown_seconds} seconds**",
+            color=0x00AAFF)
+        embed.add_field(
+            name="Usage",
+            value=
+            f"`{ctx.bot.config.prefix}fixcooldown <seconds>`\nExample: `{ctx.bot.config.prefix}fixcooldown 10`",
+            inline=False)
+        embed.add_field(name="Valid Range",
+                        value="0 to 300 seconds",
+                        inline=True)
+        await ctx.send(embed=embed)
+        return
+
+    # Validate cooldown range
+    if new_cooldown < 0 or new_cooldown > 300:
+        embed = discord.Embed(
+            title="❌ Invalid Cooldown",
+            description=
+            f"Cooldown must be between **0** and **300** seconds.\nYou entered: **{new_cooldown}**",
+            color=0xFF0000)
+        embed.add_field(
+            name="Examples",
+            value=
+            "• `!fixcooldown 5` - Very fast XP gain\n• `!fixcooldown 15` - Balanced XP gain\n• `!fixcooldown 60` - Slow XP gain",
+            inline=False)
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        old_cooldown = ctx.bot.config.xp_cooldown_seconds
+        ctx.bot.config.xp_cooldown_seconds = new_cooldown
+
+        embed = discord.Embed(
+            title="✅ XP Cooldown Updated Successfully!",
+            description=
+            f"XP cooldown changed from **{old_cooldown}s** to **{new_cooldown}s**",
+            color=0x00FF00)
+
+        # Show the impact
+        if new_cooldown < old_cooldown:
+            impact = "⚡ **Faster XP gain** - Users can gain XP more frequently"
+        elif new_cooldown > old_cooldown:
+            impact = "🐌 **Slower XP gain** - Users must wait longer between XP"
+        else:
+            impact = "🔄 **No change** - Same cooldown as before"
+
+        embed.add_field(name="Impact", value=impact, inline=False)
+        embed.add_field(
+            name="⚠️ Important Note",
+            value=
+            "This change is **temporary** and will reset when the bot restarts.\nUpdate your environment variables for permanent change.",
+            inline=False)
+
+        # Show next steps
+        embed.add_field(
+            name="💡 Test the Change",
+            value=
+            f"• Use `{ctx.bot.config.prefix}xpstatus` to check XP status\n• Have users chat in XP channels to test\n• Look for ⚡ reactions on messages",
+            inline=False)
+
+        await ctx.send(embed=embed)
+
+        # Log the change
+        print(
+            f"XP cooldown changed by {ctx.author} from {old_cooldown}s to {new_cooldown}s"
+        )
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Error Updating Cooldown",
+            description=
+            f"An error occurred while updating the cooldown: {str(e)}",
+            color=0xFF0000)
+        embed.add_field(
+            name="Debug Info",
+            value=
+            f"Old cooldown: {getattr(ctx.bot.config, 'xp_cooldown_seconds', 'Unknown')}\nNew cooldown: {new_cooldown}",
+            inline=False)
+        await ctx.send(embed=embed)
+
+
+# ALSO ADD this simple command to check current settings:
+
+
+@commands.command(name='cooldown', aliases=['getcooldown'])
+async def check_cooldown(ctx):
+    """Check current XP cooldown setting"""
+    try:
+        current_cooldown = ctx.bot.config.xp_cooldown_seconds
+
+        embed = discord.Embed(
+            title="⏰ XP Cooldown Status",
+            description=f"Current XP cooldown: **{current_cooldown} seconds**",
+            color=0x00AAFF)
+
+        # Provide context for the cooldown
+        if current_cooldown <= 5:
+            speed_rating = "🔥 **Very Fast** - Almost instant XP gain"
+        elif current_cooldown <= 15:
+            speed_rating = "⚡ **Fast** - Quick XP gain"
+        elif current_cooldown <= 30:
+            speed_rating = "⚖️ **Balanced** - Moderate XP gain"
+        elif current_cooldown <= 60:
+            speed_rating = "🐌 **Slow** - Patient XP gain"
+        else:
+            speed_rating = "🛑 **Very Slow** - Rare XP gain"
+
+        embed.add_field(name="Speed Rating", value=speed_rating, inline=False)
+        embed.add_field(
+            name="What This Means",
+            value=
+            f"Users must wait **{current_cooldown} seconds** between XP gains from chatting",
+            inline=False)
+
+        if ctx.author.guild_permissions.administrator:
+            embed.add_field(
+                name="🔧 Admin Options",
+                value=
+                f"`{ctx.bot.config.prefix}fixcooldown <seconds>` - Change cooldown\n`{ctx.bot.config.prefix}fixcooldown` - Show current setting",
+                inline=False)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"Could not retrieve cooldown setting: {str(e)}",
+            color=0xFF0000)
+
+    await ctx.send(embed=embed)
+
+
+# ADD this command to test if commands are working:
+
+
+@commands.command(name='ping')
+async def ping_command(ctx):
+    """Simple ping command to test bot responsiveness"""
+    import time
+    start_time = time.time()
+
+    embed = discord.Embed(title="🏓 Pong!",
+                          description="Bot is responding normally",
+                          color=0x00FF00)
+
+    message = await ctx.send(embed=embed)
+
+    end_time = time.time()
+    response_time = (end_time - start_time) * 1000
+
+    embed.add_field(name="Response Time",
+                    value=f"{response_time:.0f}ms",
+                    inline=True)
+
+    embed.add_field(name="Bot Latency",
+                    value=f"{ctx.bot.latency * 1000:.0f}ms",
+                    inline=True)
+
+    await message.edit(embed=embed)
+
+
 @commands.command(name='nextspawn')
 async def next_spawn_time(ctx):
     """Check when the next beast will spawn"""
@@ -4870,6 +5916,11 @@ def main():
     bot.add_command(set_spawn_channel)  # Uses the fixed version
     bot.add_command(remove_spawn_channel)  # Uses the fixed version
     bot.add_command(show_channel_config)
+    bot.add_command(sacrifice_beast)  # The epic sacrifice command
+    bot.add_command(release_beast)
+    bot.add_command(fix_xp_cooldown)  # Enhanced !fixcooldown
+    bot.add_command(check_cooldown)  # New !cooldown command
+    bot.add_command(ping_command)
 
     # ADD THESE NEW HEAL COMMANDS:
     bot.add_command(heal_beast)  # !heal command
@@ -4881,6 +5932,11 @@ def main():
     bot.add_command(user_stats)  # !userstats
     bot.add_command(leaderboard)  # !leaderboard
     bot.add_command(server_beast_stats)  # !serverbeasts
+    # Add these to your main() function:
+    bot.add_command(add_xp_channel)  # !addxpchannel
+    bot.add_command(remove_xp_channel)  # !removexp
+    bot.add_command(xp_config)  # !xpconfig - Admin XP overview
+    bot.add_command(xp_status)  # !xpstatus - User XP check
 
     try:
         bot.run(config.token)
