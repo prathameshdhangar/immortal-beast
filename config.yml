@@ -1,7 +1,7 @@
-
-
 Bot Configuration
 token: "YOUR_DISCORD_TOKEN_HERE"
+# Bot Configuration
+token: ""
 prefix: "!"
 database_path: "data/immortal_beasts.db"
 
