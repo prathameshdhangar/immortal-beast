@@ -28,10 +28,10 @@ from flask import Flask
 import gzip
 import base64
 import aiohttp
+from rate_limiter import RateLimiter
+
 
 # Configuration Management
-
-
 class BotConfig(BaseModel):
     """Bot configuration with validation"""
     token: str = Field(..., description="Discord bot token")
@@ -62,6 +62,11 @@ class BotConfig(BaseModel):
         le=120,
         description="Maximum spawn interval in minutes")
     log_level: str = Field(default="INFO", description="Logging level")
+
+    api_max_requests_per_minute: int = Field(
+        default=60, description="API max requests per minute")
+    api_retry_backoff_seconds: int = Field(
+        default=2, description="API retry backoff seconds")
 
     # Inventory limits
     normal_user_beast_limit: int = Field(
@@ -95,7 +100,7 @@ class BotConfig(BaseModel):
         description="List of channel IDs where beasts gain XP from chatting")
     xp_per_message: int = Field(default=5, description="XP gained per message")
     xp_cooldown_seconds: int = Field(
-        default=60, description="Cooldown between XP gains from same user")
+        default=20, description="Cooldown between XP gains from same user")
 
     # Starting resources
     starting_beast_stones: int = Field(
@@ -106,19 +111,9 @@ class BotConfig(BaseModel):
         default=48,
         description="Adopt command cooldown in hours (2 days = 48)")
 
-    @field_validator('spawn_interval_max')
     @classmethod
-    def validate_spawn_intervals(cls, v, info):
-        if info.data.get(
-                'spawn_interval_min') and v <= info.data['spawn_interval_min']:
-            raise ValueError(
-                'spawn_interval_max must be greater than spawn_interval_min')
-        return v
-
-    @classmethod
-    def load_from_file(cls, config_path: str = "config.yaml") -> 'BotConfig':
-        """Load configuration from YAML file or environment variables"""
-
+    def load_from_file(cls, config_path: str = "config.yml") -> "BotConfig":
+        """Load config from YAML file or environment"""
         # Check if we're in production (Render sets PORT environment variable)
         if os.getenv('PORT'):
             return cls.load_from_environment()
@@ -150,6 +145,31 @@ class BotConfig(BaseModel):
         return cls(**config_data)
 
     @classmethod
+    def load_from_environment(cls) -> "BotConfig":
+        """Load configuration from environment variables"""
+        token = os.getenv('DISCORD_BOT_TOKEN')
+        if not token:
+            raise ValueError(
+                "DISCORD_BOT_TOKEN environment variable is required")
+
+        return cls(token=token,
+                   prefix=os.getenv('BOT_PREFIX', '!'),
+                   database_path='/tmp/immortal_beasts.db',
+                   special_role_ids=[
+                       int(x.strip())
+                       for x in os.getenv('SPECIAL_ROLE_IDS', '').split(',')
+                       if x.strip()
+                   ],
+                   personal_role_id=int(os.getenv('PERSONAL_ROLE_ID', '0')),
+                   battle_channel_ids=[
+                       int(x.strip())
+                       for x in os.getenv('BATTLE_CHANNEL_IDS', '').split(',')
+                       if x.strip()
+                   ],
+                   adopt_channel_id=int(os.getenv('ADOPT_CHANNEL_ID', '0')),
+                   spawn_channel_id=int(os.getenv('SPAWN_CHANNEL_ID', '0')))
+
+    @classmethod
     def load_from_environment(cls) -> 'BotConfig':
         """Load configuration from environment variables (for production)"""
         token = os.getenv('DISCORD_BOT_TOKEN')
@@ -166,7 +186,6 @@ class BotConfig(BaseModel):
                 for channel_id in battle_channels_env.split(',')
                 if channel_id.strip()
             ]
-
         # Parse role IDs from environment (comma-separated)
         special_role_ids = []
         special_roles_env = os.getenv(
@@ -201,7 +220,7 @@ class BotConfig(BaseModel):
         return cls(
             token=token,
             prefix=os.getenv('BOT_PREFIX', '!'),
-            database_path='/tmp/immortal_beasts.db',  # Use /tmp for Render
+            database_path='/tmp/immortal_beasts.db',
             special_role_ids=special_role_ids,
             personal_role_id=int(
                 os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
@@ -214,19 +233,22 @@ class BotConfig(BaseModel):
             backup_max_size_mb=int(os.getenv('BACKUP_MAX_SIZE_MB', '100')),
             backup_enabled=os.getenv('BACKUP_ENABLED',
                                      'true').lower() == 'true',
-            spawn_interval_min=int(os.getenv('SPAWN_INTERVAL_MIN', '15')),
-            spawn_interval_max=int(os.getenv('SPAWN_INTERVAL_MAX', '45')),
+            fixed_spawn_interval_minutes=int(
+                os.getenv('FIXED_SPAWN_INTERVAL_MINUTES', '45')),
             xp_per_message=int(os.getenv('XP_PER_MESSAGE', '5')),
-            xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '60')),
+            xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '20')),
             starting_beast_stones=int(
                 os.getenv('STARTING_BEAST_STONES', '1000')),
             adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')),
-            # ADD THESE MISSING LINES:
             battle_channel_ids=battle_channel_ids,
             adopt_channel_id=int(
                 os.getenv('ADOPT_CHANNEL_ID', '1397783378618748948')),
             spawn_channel_id=int(
-                os.getenv('SPAWN_CHANNEL_ID', '1397783188394475520')))
+                os.getenv('SPAWN_CHANNEL_ID', '1397783188394475520')),
+            api_max_requests_per_minute=int(
+                os.getenv('API_MAX_REQUESTS_PER_MINUTE', '60')),
+            api_retry_backoff_seconds=int(
+                os.getenv('API_RETRY_BACKOFF_SECONDS', '2')))
 
 
 # Enums and Constants
@@ -1972,6 +1994,9 @@ class ImmortalBeastsBot(commands.Bot):
                          intents=intents,
                          help_command=None)
 
+        self.api_rate_limiter = RateLimiter(
+            max_calls=config.api_max_requests_per_minute, period=60)
+
         self.config = config
         self.db: DatabaseInterface = SQLiteDatabase(config.database_path)
         self.template_manager = BeastTemplateManager()
@@ -1990,6 +2015,29 @@ class ImmortalBeastsBot(commands.Bot):
             handlers=[logging.FileHandler('bot.log'),
                       logging.StreamHandler()])
         self.logger = logging.getLogger(__name__)
+
+    async def safe_api_call(self, api_func, *args, **kwargs):
+        """Utility for safe API requests with backoff on 429"""
+        for attempt in range(5):
+            if not self.api_rate_limiter.can_call():
+                self.logger.warning(
+                    "Hit API rate limit, backing off before API call...")
+                await asyncio.sleep(self.config.api_retry_backoff_seconds)
+            try:
+                result = await api_func(*args, **kwargs)
+                self.api_rate_limiter.record_call()
+                return result
+            except Exception as e:
+                if hasattr(e, "status") and e.status == 429:
+                    wait = self.config.api_retry_backoff_seconds * (2**attempt)
+                    self.logger.warning(
+                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})"
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    self.logger.error(f"API call failed: {e}")
+        self.logger.error("Max retries exceeded for API call")
+        return None
 
     async def setup_hook(self):
         """Enhanced setup with automatic restoration"""
@@ -2039,7 +2087,14 @@ class ImmortalBeastsBot(commands.Bot):
         # Check if message is in any XP channel (updated for multiple channels)
         if (message.channel.id in self.config.xp_chat_channel_ids
                 and hasattr(message, 'content') and len(message.content) > 3):
-            await self.handle_xp_gain(message)
+            user = await self.get_or_create_user(message.author.id,
+                                                 str(message.author))
+            if not user.active_beast_id:
+                await message.channel.send(
+                    f"{message.author.mention} You need to set an active beast to gain XP! Use `{self.config.prefix}active <beast_id>`"
+                )
+            else:
+                await self.handle_xp_gain(message)
 
         await self.process_commands(message)
 
@@ -2155,8 +2210,8 @@ class ImmortalBeastsBot(commands.Bot):
             return
 
         try:
-            backup_file = await self.backup_manager.create_backup_with_cloud_storage(
-            )
+            backup_file = await self.safe_api_call(
+                self.backup_manager.create_backup_with_cloud_storage)
             if backup_file:
                 self.logger.info(f"Enhanced backup completed: {backup_file}")
             else:
@@ -2180,13 +2235,13 @@ class ImmortalBeastsBot(commands.Bot):
                 return  # Don't spawn if there's already one
 
             # Check if it's time to spawn
+            FIXED_SPAWN_INTERVAL = 45  # minutes
             if not hasattr(self, '_next_spawn_time'):
-                wait_minutes = random.randint(self.config.spawn_interval_min,
-                                              self.config.spawn_interval_max)
                 self._next_spawn_time = datetime.datetime.now(
-                ) + datetime.timedelta(minutes=wait_minutes)
+                ) + datetime.timedelta(minutes=FIXED_SPAWN_INTERVAL)
                 self.logger.info(
-                    f"Next beast spawn scheduled in {wait_minutes} minutes")
+                    f"Next beast spawn scheduled in {FIXED_SPAWN_INTERVAL} minutes"
+                )
                 return
 
             if datetime.datetime.now() < self._next_spawn_time:
@@ -2201,12 +2256,11 @@ class ImmortalBeastsBot(commands.Bot):
                 )
 
                 # Schedule next spawn
-                wait_minutes = random.randint(self.config.spawn_interval_min,
-                                              self.config.spawn_interval_max)
                 self._next_spawn_time = datetime.datetime.now(
-                ) + datetime.timedelta(minutes=wait_minutes)
+                ) + datetime.timedelta(minutes=FIXED_SPAWN_INTERVAL)
                 self.logger.info(
-                    f"Next beast spawn scheduled in {wait_minutes} minutes")
+                    f"Next beast spawn scheduled in {FIXED_SPAWN_INTERVAL} minutes"
+                )
             else:
                 self.logger.warning(
                     f"Spawn channel {self.spawn_channel_id} not found")
@@ -3587,11 +3641,7 @@ async def next_spawn_time(ctx):
                             value="Not configured",
                             inline=True)
 
-        embed.add_field(
-            name="🎲 Spawn Range",
-            value=
-            f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} min",
-            inline=True)
+        embed.add_field(name="🎲 Spawn Interval", value="45 min", inline=True)
 
     # NEW: Show if there's currently a beast to catch
     if ctx.bot.current_spawned_beast:
@@ -3615,8 +3665,8 @@ async def manual_cloud_backup(ctx):
     message = await ctx.send(embed=embed)
 
     try:
-        backup_file = await ctx.bot.backup_manager.create_backup_with_cloud_storage(
-        )
+        backup_file = await ctx.bot.safe_api_call(
+            ctx.bot.backup_manager.create_backup_with_cloud_storage)
         if backup_file:
             embed = discord.Embed(
                 title="✅ Cloud Backup Created",
@@ -3679,7 +3729,8 @@ async def restore_from_cloud(ctx):
                 color=0xFFAA00)
             await message.edit(embed=embed)
 
-            success = await ctx.bot.backup_manager.restore_from_cloud()
+            success = await ctx.bot.safe_api_call(
+                ctx.bot.backup_manager.restore_from_cloud)
             if success:
                 embed = discord.Embed(
                     title="✅ Restore Complete",

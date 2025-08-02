@@ -1,0 +1,46 @@
+
+
+Bot Configuration
+token: "YOUR_DISCORD_TOKEN_HERE"
+prefix: "!"
+database_path: "data/immortal_beasts.db"
+
+# Role Configuration
+special_role_ids:
+  - 1393927051685400790
+  - 1393094845479780426
+personal_role_id: 1393176170601775175
+
+# Channel Configuration
+xp_chat_channel_ids:
+  - 1393424880787259482
+  - 1393626191935705198
+  - 1394289930515124325
+  - 1393163125850640414
+battle_channel_ids:
+  - 1397783271961792604
+  - 1397783317163806730
+adopt_channel_id: 1397783378618748948
+spawn_channel_id: 1397783188394475520
+
+# System Settings
+backup_enabled: true
+backup_interval_hours: 6
+backup_retention_count: 10
+backup_max_size_mb: 100
+spawn_interval_min: 15
+spawn_interval_max: 45
+log_level: "INFO"
+api_max_requests_per_minute: 60
+api_retry_backoff_seconds: 2
+
+# User Limits
+normal_user_beast_limit: 6
+special_role_beast_limit: 8
+personal_role_beast_limit: 10
+
+# Game Settings
+xp_per_message: 5
+xp_cooldown_seconds: 20
+starting_beast_stones: 1000
+adopt_cooldown_hours: 48
