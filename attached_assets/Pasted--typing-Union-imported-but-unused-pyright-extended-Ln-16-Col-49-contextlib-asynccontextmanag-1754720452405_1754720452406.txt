@@ -1,0 +1,300 @@
+`typing.Union` imported but unused
+(pyright-extended)
+Ln 16, Col 49
+`contextlib.asynccontextmanager` imported but unused
+(pyright-extended)
+Ln 17, Col 24
+`aiofiles` imported but unused
+(pyright-extended)
+Ln 23, Col 8
+`pydantic.field_validator` imported but unused
+(pyright-extended)
+Ln 25, Col 40
+`gzip` imported but unused
+(pyright-extended)
+Ln 28, Col 8
+Method declaration "load_from_environment" is obscured by a declaration of the same name
+(pyright-extended)
+Ln 148, Col 9
+Redefinition of unused `load_from_environment` from line 148
+(pyright-extended)
+Ln 173, Col 9
+No parameter named "fixed_spawn_interval_minutes"
+(pyright-extended)
+Ln 236, Col 13
+Expression of type "None" cannot be assigned to parameter of type "int"   "None" is incompatible with "int"
+(pyright-extended)
+Ln 495, Col 34
+Expression of type "None" cannot be assigned to declared type "datetime"   "None" is incompatible with "datetime"
+(pyright-extended)
+Ln 544, Col 36
+Expression of type "None" cannot be assigned to declared type "int"   "None" is incompatible with "int"
+(pyright-extended)
+Ln 545, Col 21
+Expression of type "None" cannot be assigned to declared type "str"   "None" is incompatible with "str"
+(pyright-extended)
+Ln 546, Col 22
+Argument of type "Any | None" cannot be assigned to parameter "owner_id" of type "int" in function "__init__"   Type "Any | None" cannot be assigned to type "int"     "None" is incompatible with "int"
+(pyright-extended)
+Ln 580, Col 29
+Argument of type "Any | None" cannot be assigned to parameter "unique_id" of type "str" in function "__init__"   Type "Any | None" cannot be assigned to type "str"     "None" is incompatible with "str"
+(pyright-extended)
+Ln 581, Col 30
+Expression of type "None" cannot be assigned to declared type "datetime"   "None" is incompatible with "datetime"
+(pyright-extended)
+Ln 604, Col 37
+Expression of type "None" cannot be assigned to parameter of type "int"   "None" is incompatible with "int"
+(pyright-extended)
+Ln 652, Col 44
+Expression of type "int | None" cannot be assigned to return type "int"   Type "int | None" cannot be assigned to type "int"     "None" is incompatible with "int"
+(pyright-extended)
+Ln 820, Col 20
+Expression of type "None" cannot be assigned to parameter of type "int"   "None" is incompatible with "int"
+(pyright-extended)
+Ln 826, Col 44
+Expression of type "None" cannot be assigned to parameter of type "Dict[BeastRarity, float]"   "None" is incompatible with "Dict[BeastRarity, float]"
+(pyright-extended)
+Ln 1862, Col 56
+Cannot access member "status" for type "Exception"   Member "status" is unknown
+(pyright-extended)
+Ln 2031, Col 47
+Cannot access member "initialize" for type "DatabaseInterface"   Member "initialize" is unknown
+(pyright-extended)
+Ln 2056, Col 23
+Local variable `old_level` is assigned to but never used
+(pyright-extended)
+Ln 2126, Col 13
+Argument of type "int | None" cannot be assigned to parameter "beast_id" of type "int" in function "update_beast"   Type "int | None" cannot be assigned to type "int"     "None" is incompatible with "int"
+(pyright-extended)
+Ln 2132, Col 40
+Argument of type "GuildChannel | Thread | PrivateChannel" cannot be assigned to parameter "channel" of type "TextChannel" in function "spawn_beast"   Type "GuildChannel | Thread | PrivateChannel" cannot be assigned to type "TextChannel"     "CategoryChannel" is incompatible with "TextChannel"
+(pyright-extended)
+Ln 2253, Col 40
+Cannot access member "name" for type "PrivateChannel"   Member "name" is unknown
+(pyright-extended)
+Ln 2255, Col 58
+Local variable `target_beast_id` is assigned to but never used
+(pyright-extended)
+Ln 2567, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 2936, Col 13
+Expression of type "None" cannot be assigned to parameter of type "TextChannel"   "None" is incompatible with "TextChannel"
+(pyright-extended)
+Ln 3175, Col 62
+"cooldown_remaining" is possibly unbound
+(pyright-extended)
+Ln 3390, Col 30
+"cooldown_remaining" is possibly unbound
+(pyright-extended)
+Ln 3392, Col 27
+Expression of type "None" cannot be assigned to parameter of type "TextChannel"   "None" is incompatible with "TextChannel"
+(pyright-extended)
+Ln 3409, Col 65
+Expression of type "None" cannot be assigned to parameter of type "int"   "None" is incompatible with "int"
+(pyright-extended)
+Ln 3434, Col 52
+Expression of type "None" cannot be assigned to parameter of type "Member"   "None" is incompatible with "Member"
+(pyright-extended)
+Ln 4365, Col 50
+Do not use bare `except`
+(pyright-extended)
+Ln 4516, Col 21
+Local variable `e` is assigned to but never used
+(pyright-extended)
+Ln 4543, Col 33
+"title" is possibly unbound
+(pyright-extended)
+Ln 4593, Col 19
+"value_key" is possibly unbound
+(pyright-extended)
+Ln 4604, Col 16
+"value_key" is possibly unbound
+(pyright-extended)
+Ln 4606, Col 18
+"value_key" is possibly unbound
+(pyright-extended)
+Ln 4608, Col 18
+"value_key" is possibly unbound
+(pyright-extended)
+Ln 4610, Col 18
+"value_key" is possibly unbound
+(pyright-extended)
+Ln 4612, Col 18
+"value_key" is possibly unbound
+(pyright-extended)
+Ln 4614, Col 18
+"value" is possibly unbound
+(pyright-extended)
+Ln 4623, Col 26
+"value_suffix" is possibly unbound
+(pyright-extended)
+Ln 4623, Col 37
+"value" is possibly unbound
+(pyright-extended)
+Ln 4627, Col 44
+"value_suffix" is possibly unbound
+(pyright-extended)
+Ln 4627, Col 55
+f-string without any placeholders
+(pyright-extended)
+Ln 4640, Col 35
+Local variable `all_beast_data` is assigned to but never used
+(pyright-extended)
+Ln 4690, Col 9
+Do not use bare `except`
+(pyright-extended)
+Ln 4706, Col 13
+Expression of type "None" cannot be assigned to parameter of type "Member"   "None" is incompatible with "Member"
+(pyright-extended)
+Ln 4793, Col 58
+f-string without any placeholders
+(pyright-extended)
+Ln 4806, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 4809, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 4809, Col 53
+f-string without any placeholders
+(pyright-extended)
+Ln 4833, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 4835, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4836, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4836, Col 72
+f-string without any placeholders
+(pyright-extended)
+Ln 4847, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 4881, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 4939, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 4941, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4941, Col 47
+f-string without any placeholders
+(pyright-extended)
+Ln 4942, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4942, Col 66
+f-string without any placeholders
+(pyright-extended)
+Ln 4949, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 4955, Col 15
+f-string without any placeholders
+(pyright-extended)
+Ln 4956, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 4976, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 4978, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4979, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4980, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4980, Col 59
+f-string without any placeholders
+(pyright-extended)
+Ln 5012, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 5015, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5016, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5016, Col 57
+f-string without any placeholders
+(pyright-extended)
+Ln 5027, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 5028, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5029, Col 13
+Local variable `loser_user` is assigned to but never used
+(pyright-extended)
+Ln 5063, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5109, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5115, Col 65
+f-string without any placeholders
+(pyright-extended)
+Ln 5121, Col 11
+f-string without any placeholders
+(pyright-extended)
+Ln 5122, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5128, Col 11
+f-string without any placeholders
+(pyright-extended)
+Ln 5140, Col 27
+f-string without any placeholders
+(pyright-extended)
+Ln 5144, Col 21
+f-string without any placeholders
+(pyright-extended)
+Ln 5154, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 5156, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5156, Col 24
+f-string without any placeholders
+(pyright-extended)
+Ln 5160, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 5160, Col 45
+f-string without any placeholders
+(pyright-extended)
+Ln 5161, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5161, Col 50
+f-string without any placeholders
+(pyright-extended)
+Ln 5162, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5162, Col 36
+f-string without any placeholders
+(pyright-extended)
+Ln 5239, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5240, Col 11
+f-string without any placeholders
+(pyright-extended)
+Ln 5800, Col 29
+Expression of type "None" cannot be assigned to parameter of type "int"   "None" is incompatible with "int"
+(pyright-extended)
+Ln 5890, C

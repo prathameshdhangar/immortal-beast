@@ -17,8 +17,8 @@ personal_role_id: YOUR_PERSONAL_ROLE_ID
 
 # XP System (replace with your actual channel IDs)  
 xp_chat_channel_ids: [1393424880787259482]
-xp_per_message: 5
-xp_cooldown_seconds: 20
+xp_per_message: 20
+xp_cooldown_seconds: 60
 
 # Starting resources
 starting_beast_stones: 1000
