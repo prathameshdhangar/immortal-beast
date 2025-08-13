@@ -208,7 +208,7 @@ class BotConfig(BaseModel):
         if os.getenv('PORT'):  # Production (Heroku/Railway)
             backup_retention = 3
             backup_interval = 12
-            database_path = '/app/immortal_beasts.db'  # Production path
+            database_path = '/tmp/immortal_beasts.db'  # Production path
         else:  # Development
             backup_retention = 10
             backup_interval = 6
