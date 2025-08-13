@@ -1,0 +1,140 @@
+(" was not closed
+(pyright-extended)
+Ln 5098, Col 24
+"ansi" is not defined
+(pyright-extended)
+Ln 5104, Col 13
+Positional argument cannot appear after keyword arguments
+(pyright-extended)
+Ln 5104, Col 13
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5104, Col 13
+Expected 0 positional arguments
+(pyright-extended)
+Ln 5104, Col 13
+SyntaxError: Expected a newline after line continuation character
+(pyright-extended)
+Ln 5104, Col 17
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5104, Col 18
+SyntaxError: missing closing quote in string literal
+(pyright-extended)
+Ln 5104, Col 19
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5105, Col 9
+"battle_result" is not defined
+(pyright-extended)
+Ln 5117, Col 36
+"battle_result" is not defined
+(pyright-extended)
+Ln 5118, Col 38
+"battle_result" is not defined
+(pyright-extended)
+Ln 5119, Col 39
+"battle_result" is not defined
+(pyright-extended)
+Ln 5120, Col 44
+"battle_result" is not defined
+(pyright-extended)
+Ln 5121, Col 50
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5124, Col 5
+"battle_result" is not defined
+(pyright-extended)
+Ln 5127, Col 36
+"challenger_user" is not defined
+(pyright-extended)
+Ln 5128, Col 37
+"winner_user" is not defined
+(pyright-extended)
+Ln 5133, Col 8
+"battle_result" is not defined
+(pyright-extended)
+Ln 5134, Col 24
+"battle_result" is not defined
+(pyright-extended)
+Ln 5135, Col 21
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5137, Col 9
+"winner_user" is not defined
+(pyright-extended)
+Ln 5139, Col 39
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5144, Col 9
+"battle_result" is not defined
+(pyright-extended)
+Ln 5173, Col 27
+"challenger_beast_obj" is not defined
+(pyright-extended)
+Ln 5173, Col 53
+"battle_result" is not defined
+(pyright-extended)
+Ln 5174, Col 25
+"opponent_beast_obj" is not defined
+(pyright-extended)
+Ln 5174, Col 51
+"challenger_beast_obj" is not defined
+(pyright-extended)
+Ln 5177, Col 30
+"opponent_beast_obj" is not defined
+(pyright-extended)
+Ln 5179, Col 28
+"challenger_beast_obj" is not defined
+(pyright-extended)
+Ln 5182, Col 32
+"challenger_beast_obj" is not defined
+(pyright-extended)
+Ln 5183, Col 17
+"opponent_beast_obj" is not defined
+(pyright-extended)
+Ln 5185, Col 30
+"opponent_beast_obj" is not defined
+(pyright-extended)
+Ln 5186, Col 17
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5188, Col 5
+"challenger_beast_obj" is not defined
+(pyright-extended)
+Ln 5190, Col 22
+"challenger_beast_obj" is not defined
+(pyright-extended)
+Ln 5192, Col 37
+"opponent_beast_obj" is not defined
+(pyright-extended)
+Ln 5193, Col 18
+"opponent_beast_obj" is not defined
+(pyright-extended)
+Ln 5195, Col 35
+"winner_user" is not defined
+(pyright-extended)
+Ln 5199, Col 8
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5200, Col 9
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5206, Col 9
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5212, Col 9
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5219, Col 5
+"challenger_user" is not defined
+(pyright-extended)
+Ln 5222, Col 50
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5229, Col 5
+"embed" is possibly unbound
+(pyright-extended)
+Ln 5235, Col 5
+"embed" is possibly unbound
+(pyright-extended)
