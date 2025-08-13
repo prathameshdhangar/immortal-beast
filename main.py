@@ -1890,55 +1890,55 @@ class BeastTemplateManager:
     def get_random_template_by_rarity(
         self, rarity: BeastRarity) -> Optional[BeastTemplate]:
         """Get random template of specific rarity"""
-    rarity_templates = [
-        template for template in self.templates.values()
-        if template.rarity == rarity
-    ]
+        rarity_templates = [
+            template for template in self.templates.values()
+            if template.rarity == rarity
+        ]
         return random.choice(rarity_templates) if rarity_templates else None
 
     def get_random_template_up_to_rarity(
         self,
         max_rarity: BeastRarity,
         rarity_weights: Optional[Dict[BeastRarity, float]] = None) -> BeastTemplate:
-    """Get random template up to specified rarity with weights"""  # ✅ NOW PROPERLY INDENTED
-    if not self.templates:  # ✅ NOW PROPERLY INDENTED
-        raise ValueError("No beast templates available")
+        """Get random template up to specified rarity with weights"""
+        if not self.templates:
+            raise ValueError("No beast templates available")
 
-    if rarity_weights is None:
-        rarity_weights = {
-            BeastRarity.COMMON: 27,
-            BeastRarity.UNCOMMON: 40,
-            BeastRarity.RARE: 27,
-            BeastRarity.EPIC: 5,
-            BeastRarity.LEGENDARY: 1
-        }
+        if rarity_weights is None:
+            rarity_weights = {
+                BeastRarity.COMMON: 27,
+                BeastRarity.UNCOMMON: 40,
+                BeastRarity.RARE: 27,
+                BeastRarity.EPIC: 5,
+                BeastRarity.LEGENDARY: 1
+            }
 
-    available_templates = []
-    weights = []
-    for template in self.templates.values():
-        if template.rarity.value <= max_rarity.value and template.rarity in rarity_weights:
-            available_templates.append(template)
-            weights.append(rarity_weights[template.rarity])
+        available_templates = []
+        weights = []
+        for template in self.templates.values():
+            if template.rarity.value <= max_rarity.value and template.rarity in rarity_weights:
+                available_templates.append(template)
+                weights.append(rarity_weights[template.rarity])
 
-    # Use weighted selection if we have both templates and weights
-    if available_templates and weights:
-        return random.choices(available_templates, weights=weights)[0]
+        # Use weighted selection if we have both templates and weights
+        if available_templates and weights:
+            return random.choices(available_templates, weights=weights)[0]
 
-    # Fallback to unweighted selection
-    fallback_templates = [
-        t for t in self.templates.values()
-        if t.rarity.value <= max_rarity.value
-    ]
+        # Fallback to unweighted selection
+        fallback_templates = [
+            t for t in self.templates.values()
+            if t.rarity.value <= max_rarity.value
+        ]
 
-    if fallback_templates:
-        return random.choice(fallback_templates)
+        if fallback_templates:
+            return random.choice(fallback_templates)
 
-    # Ultimate fallback - return any template
-    return random.choice(list(self.templates.values()))
+        # Ultimate fallback - return any template
+        return random.choice(list(self.templates.values()))
 
     def get_template_by_name(self, name: str) -> Optional[BeastTemplate]:
-    """Get specific template by name"""  # ✅ PROPERLY INDENTED
-    return self.templates.get(name)  # ✅ PROPERLY INDENTED
+        """Get specific template by name"""
+        return self.templates.get(name)
     
 class UserRoleManager:
     """Manages user roles and permissions"""
