@@ -1,0 +1,138 @@
+f-string without any placeholders
+(pyright-extended)
+Ln 4886, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 4889, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 4889, Col 53
+f-string without any placeholders
+(pyright-extended)
+Ln 4913, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 4915, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4916, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 4916, Col 72
+f-string without any placeholders
+(pyright-extended)
+Ln 4927, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 4961, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5019, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 5021, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5021, Col 47
+f-string without any placeholders
+(pyright-extended)
+Ln 5022, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5022, Col 66
+f-string without any placeholders
+(pyright-extended)
+Ln 5029, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5035, Col 15
+f-string without any placeholders
+(pyright-extended)
+Ln 5036, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5056, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 5058, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5059, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5060, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5060, Col 59
+f-string without any placeholders
+(pyright-extended)
+Ln 5092, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 5095, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5096, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5096, Col 57
+f-string without any placeholders
+(pyright-extended)
+Ln 5107, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 5108, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5109, Col 13
+Local variable `loser_user` is assigned to but never used
+(pyright-extended)
+Ln 5160, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5217, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5223, Col 65
+f-string without any placeholders
+(pyright-extended)
+Ln 5229, Col 11
+f-string without any placeholders
+(pyright-extended)
+Ln 5230, Col 9
+f-string without any placeholders
+(pyright-extended)
+Ln 5236, Col 11
+f-string without any placeholders
+(pyright-extended)
+Ln 5248, Col 27
+f-string without any placeholders
+(pyright-extended)
+Ln 5252, Col 21
+f-string without any placeholders
+(pyright-extended)
+Ln 5262, Col 19
+f-string without any placeholders
+(pyright-extended)
+Ln 5264, Col 13
+f-string without any placeholders
+(pyright-extended)
+Ln 5264, Col 24
+f-string without any placeholders
+(pyright-extended)
+Ln 5268, Col 31
+f-string without any placeholders
+(pyright-extended)
+Ln 5268, Col 45
+f-string without any placeholders
+(pyright-extended)
+Ln 5269, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5269, Col 50
+f-string without any placeholders
+(pyright-extended)
+Ln 5270, Col 25
+f-string without any placeholders
+(pyright-extended)
+Ln 5270, Col 36

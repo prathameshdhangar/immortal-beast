@@ -673,6 +673,11 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
+    async def initialize(self) -> None:
+        """Initialize the database (create tables, setup schema, etc.)"""
+        pass
+
+    @abstractmethod
     async def get_user_beasts(self,
                               user_id: int,
                               limit: Optional[int] = None) -> List[Tuple[int, Beast]]:  # ✅ Fixed
@@ -695,7 +700,7 @@ class SQLiteDatabase(DatabaseInterface):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize database schema"""
         conn = sqlite3.connect(self.db_path)
         try:
@@ -1320,6 +1325,8 @@ class BeastTemplateManager:
                 except Exception as e:
                     logging.error(
                         f"Failed to load beast template '{name}': {e}")
+
+            logging.info(f"Loaded {len(self.templates)} beast templates")
         except Exception as e:
             logging.error(
                 f"Failed to load beast templates from {self.data_file}: {e}")
@@ -2070,7 +2077,8 @@ class ImmortalBeastsBot(commands.Bot):
                 self.api_rate_limiter.record_call()
                 return result
             except Exception as e:
-                if hasattr(e, "status") and e.status == 429:
+                # ✅ FIXED: Safe attribute checking for status
+                if hasattr(e, "status") and getattr(e, "status", None) == 429:
                     wait = self.config.api_retry_backoff_seconds * (2**attempt)
                     self.logger.warning(
                         f"429 error, backing off for {wait} seconds (attempt {attempt+1})"
@@ -2080,6 +2088,7 @@ class ImmortalBeastsBot(commands.Bot):
                     self.logger.error(f"API call failed: {e}")
         self.logger.error("Max retries exceeded for API call")
         return None
+
 
     async def setup_hook(self):
         """Enhanced setup with automatic restoration - MESSAGE XP ONLY"""
@@ -2167,6 +2176,10 @@ class ImmortalBeastsBot(commands.Bot):
                     break
 
             if not active_beast:
+                return
+
+            if active_beast_id is None:
+                self.logger.error("Active beast found but beast_id is None")
                 return
 
             # ✅ NEW: Calculate role-based XP amount with bonuses!
@@ -2281,13 +2294,10 @@ class ImmortalBeastsBot(commands.Bot):
                 return  # Don't spawn if there's already one
 
             # Check if it's time to spawn
-            FIXED_SPAWN_INTERVAL = 45  # minutes
+            spawn_interval = self.config.fixed_spawn_interval_minutes  # ✅ Use config
             if not hasattr(self, '_next_spawn_time'):
-                self._next_spawn_time = datetime.datetime.now(
-                ) + datetime.timedelta(minutes=FIXED_SPAWN_INTERVAL)
-                self.logger.info(
-                    f"Next beast spawn scheduled in {FIXED_SPAWN_INTERVAL} minutes"
-                )
+                self._next_spawn_time = datetime.datetime.now() + datetime.timedelta(minutes=spawn_interval)
+                self.logger.info(f"Next beast spawn scheduled in {spawn_interval} minutes")
                 return
 
             if datetime.datetime.now() < self._next_spawn_time:
@@ -2295,24 +2305,25 @@ class ImmortalBeastsBot(commands.Bot):
 
             # Time to spawn!
             channel = self.get_channel(self.spawn_channel_id)
-            if channel:
+            if channel and isinstance(channel, discord.TextChannel):
                 await self.spawn_beast(channel)
-                self.logger.info(
-                    f"Beast spawned in channel: {channel.name} ({self.spawn_channel_id})"
-                )
+                self.logger.info(f"Beast spawned in channel: {channel.name} ({self.spawn_channel_id})")
 
                 # Schedule next spawn
-                self._next_spawn_time = datetime.datetime.now(
-                ) + datetime.timedelta(minutes=FIXED_SPAWN_INTERVAL)
-                self.logger.info(
-                    f"Next beast spawn scheduled in {FIXED_SPAWN_INTERVAL} minutes"
+                self._next_spawn_time = datetime.datetime.now() + datetime.timedelta(minutes=spawn_interval)
+                self.logger.info(f"Next beast spawn scheduled in {spawn_interval} minutes")
+            elif channel:
+                # ✅ Enhanced: Channel exists but wrong type
+                self.logger.warning(
+                    f"Spawn channel {self.spawn_channel_id} is not a text channel (type: {type(channel).__name__})"
                 )
             else:
-                self.logger.warning(
-                    f"Spawn channel {self.spawn_channel_id} not found")
+                # ✅ Enhanced: Channel doesn't exist
+                self.logger.warning(f"Spawn channel {self.spawn_channel_id} not found")
 
         except Exception as e:
             self.logger.error(f"Spawn task failed: {e}")
+
 
     async def spawn_beast(self, channel: discord.TextChannel):
         """Spawn a beast in the given channel"""
@@ -3215,31 +3226,41 @@ async def release_beast(ctx, beast_id: int):
 # ADD THIS POWERFUL DEBUGGING COMMAND:
 
 
-@commands.command(name='addxpchannel')
-@commands.has_permissions(administrator=True)
-async def add_xp_channel(ctx, channel: discord.TextChannel = None):
-    """Add a channel to XP gain list (admin only)"""
-    if channel is None:
-        channel = ctx.channel
+    from typing import Optional
 
-    if channel.id in ctx.bot.config.xp_chat_channel_ids:
-        embed = discord.Embed(
-            title="⚠️ Already Added",
-            description=f"{channel.mention} is already in the XP channel list",
-            color=0xFFAA00)
-    else:
-        ctx.bot.config.xp_chat_channel_ids.append(channel.id)
-        embed = discord.Embed(
-            title="✅ XP Channel Added",
-            description=f"{channel.mention} has been added to XP channels",
-            color=0x00FF00)
-        embed.add_field(
-            name="⚠️ Note",
-            value=
-            "This change is temporary. Update environment variables for permanent change.",
-            inline=False)
+    @commands.command(name='addxpchannel')
+    @commands.has_permissions(administrator=True)
+    async def add_xp_channel(self, ctx, channel: Optional[discord.TextChannel] = None):  # ✅ Fixed type annotation
+        """Add a channel to XP gain list (admin only)"""
+        if channel is None:
+            channel = ctx.channel
+            # ✅ ADDED: Ensure ctx.channel is actually a TextChannel
+            if not isinstance(channel, discord.TextChannel):
+                embed = discord.Embed(
+                    title="❌ Invalid Channel",
+                    description="This command can only be used in text channels.",
+                    color=0xFF0000)
+                await ctx.send(embed=embed)
+                return
 
-    await ctx.send(embed=embed)
+        if channel.id in ctx.bot.config.xp_chat_channel_ids:
+            embed = discord.Embed(
+                title="⚠️ Already Added",
+                description=f"{channel.mention} is already in the XP channel list",
+                color=0xFFAA00)
+        else:
+            ctx.bot.config.xp_chat_channel_ids.append(channel.id)
+            embed = discord.Embed(
+                title="✅ XP Channel Added",
+                description=f"{channel.mention} has been added to XP channels",
+                color=0x00FF00)
+            embed.add_field(
+                name="⚠️ Note",
+                value="This change is temporary. Update environment variables for permanent change.",
+                inline=False)
+
+        await ctx.send(embed=embed)
+
 
 
 # ADD THESE COMMANDS if you don't have them:
@@ -3332,11 +3353,13 @@ async def xp_config(ctx):
 
     await ctx.send(embed=embed)
 
-
 @commands.command(name='xpstatus', aliases=['xpcheck'])
-async def xp_status(ctx):
+async def xp_status(self, ctx):  # ✅ Added missing 'self' parameter
     """Check your XP gain status and settings"""
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    # ✅ FIXED: Initialize cooldown_remaining at the start
+    cooldown_remaining = 0
 
     embed = discord.Embed(
         title="⚡ XP System Status",
@@ -3369,8 +3392,7 @@ async def xp_status(ctx):
         else:
             embed.add_field(
                 name="🐉 Active Beast",
-                value=
-                "❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
+                value="❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
                 inline=True)
     else:
         embed.add_field(
@@ -3381,14 +3403,12 @@ async def xp_status(ctx):
     # Cooldown check
     if user.last_xp_gain:
         time_since_last = datetime.datetime.now() - user.last_xp_gain
-        cooldown_remaining = ctx.bot.config.xp_cooldown_seconds - time_since_last.total_seconds(
-        )
+        cooldown_remaining = max(0, ctx.bot.config.xp_cooldown_seconds - time_since_last.total_seconds())  # ✅ Now properly assigned
 
         if cooldown_remaining > 0:
             embed.add_field(
                 name="⏰ XP Cooldown",
-                value=
-                f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
+                value=f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
                 inline=False)
         else:
             embed.add_field(name="⏰ XP Cooldown",
@@ -3424,7 +3444,7 @@ async def xp_status(ctx):
                     value=channel_text if xp_channels else "None configured",
                     inline=True)
 
-    # Recommendations
+    # Recommendations - now cooldown_remaining is always defined
     recommendations = []
     if not user.active_beast_id:
         recommendations.append(
@@ -3432,7 +3452,7 @@ async def xp_status(ctx):
         )
     if not current_channel_valid:
         recommendations.append("📍 Move to an XP-enabled channel")
-    if user.last_xp_gain and cooldown_remaining > 0:
+    if user.last_xp_gain and cooldown_remaining > 0:  # ✅ Now safe to use!
         recommendations.append(
             f"⏰ Wait {int(cooldown_remaining)}s for cooldown")
 
@@ -3449,12 +3469,21 @@ async def xp_status(ctx):
     await ctx.send(embed=embed)
 
 
+    
 @commands.command(name='removexp')
 @commands.has_permissions(administrator=True)
-async def remove_xp_channel(ctx, channel: discord.TextChannel = None):
+async def remove_xp_channel(self, ctx, channel: Optional[discord.TextChannel] = None):  # ✅ Fixed
     """Remove a channel from XP gain list (admin only)"""
     if channel is None:
         channel = ctx.channel
+        # ✅ ADDED: Ensure ctx.channel is actually a TextChannel
+        if not isinstance(channel, discord.TextChannel):
+            embed = discord.Embed(
+                title="❌ Invalid Channel",
+                description="This command can only be used in text channels.",
+                color=0xFF0000)
+            await ctx.send(embed=embed)
+            return
 
     if channel.id in ctx.bot.config.xp_chat_channel_ids:
         ctx.bot.config.xp_chat_channel_ids.remove(channel.id)
@@ -3473,10 +3502,9 @@ async def remove_xp_channel(ctx, channel: discord.TextChannel = None):
 
 # REPLACE the existing fixcooldown command with this enhanced version:
 
-
 @commands.command(name='fixcooldown', aliases=['setcooldown'])
 @commands.has_permissions(administrator=True)
-async def fix_xp_cooldown(ctx, new_cooldown: int = None):
+async def fix_xp_cooldown(self, ctx, new_cooldown: Optional[int] = None):  # ✅ Fixed
     """Temporarily adjust XP cooldown (admin only)"""
 
     # If no cooldown provided, show current setting
@@ -3563,6 +3591,7 @@ async def fix_xp_cooldown(ctx, new_cooldown: int = None):
             f"Old cooldown: {getattr(ctx.bot.config, 'xp_cooldown_seconds', 'Unknown')}\nNew cooldown: {new_cooldown}",
             inline=False)
         await ctx.send(embed=embed)
+
 
 
 # ALSO ADD this simple command to check current settings:
@@ -4405,21 +4434,25 @@ async def check_user_beasts(ctx, user: discord.Member):
             color=0xFF0000)
         await ctx.send(embed=embed)
 
-
 @commands.command(name='userstats')
-async def user_stats(ctx, user: discord.Member = None):
+async def user_stats(self, ctx, user: Optional[discord.Member] = None):
     """Check public stats for a user"""
     if user is None:
         user = ctx.author
 
+    # ✅ FIXED: Add assertion to ensure user is not None
+    if user is None:
+        await ctx.send("❌ Unable to determine user.")
+        return
+
     try:
-        # Get user data
-        user_data = await ctx.bot.get_or_create_user(user.id, str(user))
-        user_beasts = await ctx.bot.db.get_user_beasts(user.id)
+        # Now pyright knows user is definitely not None
+        user_data = await ctx.bot.get_or_create_user(user.id, str(user))  # ✅ Safe
+        user_beasts = await ctx.bot.db.get_user_beasts(user.id)          # ✅ Safe
         user_role = ctx.bot.role_manager.get_user_role(user)
         beast_limit = ctx.bot.role_manager.get_beast_limit(user_role)
 
-        embed = discord.Embed(title=f"📊 {user.display_name}'s Public Stats",
+        embed = discord.Embed(title=f"📊 {user.display_name}'s Public Stats",  # ✅ Safe
                               color=0x00AAFF)
 
         # Beast collection stats
@@ -4450,21 +4483,15 @@ async def user_stats(ctx, user: discord.Member = None):
 
             for _, beast in user_beasts:
                 rarity_name = beast.rarity.name.title()
-                rarity_counts[rarity_name] = rarity_counts.get(rarity_name,
-                                                               0) + 1
+                rarity_counts[rarity_name] = rarity_counts.get(rarity_name, 0) + 1
                 total_power += beast.power_level
                 highest_level = max(highest_level, beast.stats.level)
 
             rarity_text = []
-            for rarity in [
-                    'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'
-            ]:
+            for rarity in ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic']:
                 count = rarity_counts.get(rarity, 0)
                 if count > 0:
-                    stars = '⭐' * ([
-                        'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary',
-                        'Mythic'
-                    ].index(rarity) + 1)
+                    stars = '⭐' * (['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'].index(rarity) + 1)
                     rarity_text.append(f"{stars} {count}")
 
             embed.add_field(
@@ -4483,8 +4510,7 @@ async def user_stats(ctx, user: discord.Member = None):
         account_age = datetime.datetime.now() - user_data.created_at
         embed.add_field(
             name="📅 Account Info",
-            value=
-            f"**Playing Since:** {user_data.created_at.strftime('%Y-%m-%d')}\n"
+            value=f"**Playing Since:** {user_data.created_at.strftime('%Y-%m-%d')}\n"
             f"**Days Active:** {account_age.days}",
             inline=True)
 
@@ -4511,7 +4537,7 @@ async def user_stats(ctx, user: discord.Member = None):
 
 
 @commands.command(name='leaderboard', aliases=['lb', 'top'])
-async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
+async def leaderboard(self, ctx, category: str = "beasts", limit: int = 10):  # ✅ Added missing 'self'
     """Show various leaderboards
 
     Categories: beasts, stones, battles, wins, catches, power
@@ -4531,6 +4557,11 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
+
+    # ✅ FIXED: Initialize variables with defaults
+    title = "📊 Leaderboard"
+    value_key = "beast_count"
+    value_suffix = " items"
 
     try:
         # Get all users from database
@@ -4556,8 +4587,7 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
                 discord_user = ctx.bot.get_user(user_row['user_id'])
                 if not discord_user:
                     try:
-                        discord_user = await ctx.bot.fetch_user(
-                            user_row['user_id'])
+                        discord_user = await ctx.bot.fetch_user(user_row['user_id'])
                     except:
                         continue
 
@@ -4572,11 +4602,9 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
                                      user_row['created_at']))
 
                 # Get beast count and total power for this user
-                user_beasts = await ctx.bot.db.get_user_beasts(
-                    user_data.user_id)
+                user_beasts = await ctx.bot.db.get_user_beasts(user_data.user_id)
                 beast_count = len(user_beasts)
-                total_power = sum(beast.power_level
-                                  for _, beast in user_beasts)
+                total_power = sum(beast.power_level for _, beast in user_beasts)
 
                 entry = {
                     'user': discord_user,
@@ -4604,26 +4632,22 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
             value_key = 'beast_count'
             value_suffix = " beasts"
         elif category == "stones":
-            leaderboard_data.sort(key=lambda x: x['user_data'].spirit_stones,
-                                  reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].spirit_stones, reverse=True)
             title = "💰 Beast Stones Leaderboard"
             value_key = 'spirit_stones'
             value_suffix = " stones"
         elif category == "battles":
-            leaderboard_data.sort(key=lambda x: x['user_data'].total_battles,
-                                  reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].total_battles, reverse=True)
             title = "⚔️ Total Battles Leaderboard"
             value_key = 'total_battles'
             value_suffix = " battles"
         elif category == "wins":
-            leaderboard_data.sort(key=lambda x: x['user_data'].wins,
-                                  reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].wins, reverse=True)
             title = "🏆 Battle Wins Leaderboard"
             value_key = 'wins'
             value_suffix = " wins"
         elif category == "catches":
-            leaderboard_data.sort(key=lambda x: x['user_data'].total_catches,
-                                  reverse=True)
+            leaderboard_data.sort(key=lambda x: x['user_data'].total_catches, reverse=True)
             title = "🎯 Total Catches Leaderboard"
             value_key = 'total_catches'
             value_suffix = " catches"
@@ -4632,10 +4656,18 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
             title = "💪 Total Power Leaderboard"
             value_key = 'total_power'
             value_suffix = " power"
+        else:
+            # ✅ ADDED: Safety else clause (should never be reached due to validation)
+            embed = discord.Embed(
+                title="❌ Unexpected Error",
+                description="Invalid category detected after validation.",
+                color=0xFF0000)
+            await ctx.send(embed=embed)
+            return
 
         # Create leaderboard embed
         embed = discord.Embed(
-            title=title,
+            title=title,  # ✅ Now guaranteed to be defined
             description=f"Top {min(limit, len(leaderboard_data))} players",
             color=0xFFD700)
 
@@ -4645,6 +4677,9 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
         for i, entry in enumerate(leaderboard_data[:limit]):
             rank = i + 1
             medal = medals[i] if i < 3 else f"{rank}."
+
+            # ✅ FIXED: Initialize value with default
+            value = 0
 
             if value_key == 'spirit_stones':
                 value = entry['user_data'].spirit_stones
@@ -4664,13 +4699,13 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
                 win_rate = entry['user_data'].win_rate
                 embed.add_field(
                     name=f"{medal} {entry['user'].display_name}",
-                    value=
-                    f"**{value:,}**{value_suffix}\n*{win_rate:.1f}% win rate*",
+                    value=f"**{value:,}**{value_suffix}\n*{win_rate:.1f}% win rate*",  # ✅ Now safe
                     inline=True)
             else:
-                embed.add_field(name=f"{medal} {entry['user'].display_name}",
-                                value=f"**{value:,}**{value_suffix}",
-                                inline=True)
+                embed.add_field(
+                    name=f"{medal} {entry['user'].display_name}",
+                    value=f"**{value:,}**{value_suffix}",  # ✅ Now safe
+                    inline=True)
 
         # Find requesting user's rank
         user_rank = None
@@ -4680,12 +4715,11 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
                 break
 
         if user_rank and user_rank > limit:
-            embed.set_footer(text=f"Your rank: #{user_rank}")
+            embed.set_footer(text=f"Your rank: #{user_rank}")  # ✅ Fixed f-string
         elif user_rank:
-            embed.set_footer(text=f"You're on the leaderboard! 🎉")
+            embed.set_footer(text="You're on the leaderboard! 🎉")
         else:
-            embed.set_footer(
-                text="Start your journey to climb the leaderboard!")
+            embed.set_footer(text="Start your journey to climb the leaderboard!")
 
         await ctx.send(embed=embed)
 
@@ -4695,6 +4729,7 @@ async def leaderboard(ctx, category: str = "beasts", limit: int = 10):
             description=f"Failed to generate leaderboard: {str(e)}",
             color=0xFF0000)
         await ctx.send(embed=embed)
+
 
 
 @commands.command(name='serverbeasts', aliases=['serverstats'])
@@ -4835,7 +4870,7 @@ async def server_beast_stats(ctx):
 
 @commands.command(name='battle', aliases=['fight'])
 @require_channel("battle")
-async def battle_command(ctx, opponent: discord.Member = None):
+async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
     """Challenge another user to a beast battle"""
 
     # Enhanced error: No opponent provided
