@@ -1,0 +1,409 @@
+message = await ctx.send(embed=embed)
+2187
+        await ctx.send(embed=embed)
+2194
+    await ctx.send(embed=embed)
+2354
+                await ctx.send(embed=embed)
+2364
+                await ctx.send(embed=embed)
+2374
+                await ctx.send(embed=embed)
+2405
+        await ctx.send(embed=embed)
+2431
+await ctx.send(embed=embed)
+2446
+    await ctx.send(embed=embed)
+2456
+    await ctx.send(embed=embed)
+2465
+    await ctx.send(embed=embed)
+2470
+    await ctx.send(embed=embed)
+2552
+await ctx.send(embed=embed)
+2594
+    await ctx.send(embed=embed)
+2625
+    await ctx.send(embed=embed)
+2743
+message = await ctx.send(embed=embed)
+2974
+    await ctx.send(embed=embed)
+2993
+    await ctx.send(embed=embed)
+3069
+message = await ctx.send(embed=embed)
+3197
+await ctx.send(embed=embed)
+3288
+await ctx.send(embed=embed)
+3404
+await ctx.send(embed=embed)
+3426
+await ctx.send(embed=embed)
+3452
+    await ctx.send(embed=embed)
+3467
+    await ctx.send(embed=embed)
+3502
+    await ctx.send(embed=embed)
+3520
+    await ctx.send(embed=embed)
+3569
+await ctx.send(embed=embed)
+3585
+message = await ctx.send(embed=embed)
+3610
+    await ctx.send(embed=embed)
+3654
+await ctx.send(embed=embed)
+3665
+message = await ctx.send(embed=embed)
+3711
+message = await ctx.send(embed=embed)
+3776
+    await ctx.send(embed=embed)
+3794
+        await ctx.send(embed=embed)
+3825
+await ctx.send(embed=embed)
+3842
+    await ctx.send(embed=embed)
+3874
+await ctx.send(embed=embed)
+3918
+await ctx.send(embed=embed)
+3938
+    await ctx.send(embed=embed)
+3987
+await ctx.send(embed=embed)
+4007
+    await ctx.send(embed=embed)
+4027
+await ctx.send(embed=embed)
+4063
+await ctx.send(embed=embed)
+4086
+    await ctx.send(embed=embed)
+4106
+    await ctx.send(embed=embed)
+4119
+    await ctx.send(embed=embed)
+4162
+await ctx.send(embed=embed)
+4181
+    await ctx.send(embed=embed)
+4195
+    await ctx.send(embed=embed)
+4223
+    await ctx.send(embed=embed)
+4272
+await ctx.send(embed=embed)
+4295
+        await ctx.send(embed=embed)
+4354
+    await ctx.send(embed=embed)
+4361
+    await ctx.send(embed=embed)
+4458
+    await ctx.send(embed=embed)
+4465
+    await ctx.send(embed=embed)
+4487
+    await ctx.send(embed=embed)
+4502
+        await ctx.send(embed=embed)
+4551
+        await ctx.send(embed=embed)
+4645
+    await ctx.send(embed=embed)
+4652
+    await ctx.send(embed=embed)
+4781
+    await ctx.send(embed=embed)
+4788
+    await ctx.send(embed=embed)
+4821
+    await ctx.send(embed=embed)
+4853
+    await ctx.send(embed=embed)
+4887
+    await ctx.send(embed=embed)
+4927
+    await ctx.send(embed=embed)
+4962
+    await ctx.send(embed=embed)
+4998
+    await ctx.send(embed=embed)
+5035
+    await ctx.send(embed=embed)
+5252
+await ctx.send(embed=embed)
+5269
+    await ctx.send(embed=embed)
+5279
+    await ctx.send(embed=embed)
+5290
+    await ctx.send(embed=embed)
+5302
+    await ctx.send(embed=embed)
+5345
+await ctx.send(embed=embed)
+5362
+    await ctx.send(embed=embed)
+5371
+    await ctx.send(embed=embed)
+5382
+    await ctx.send(embed=embed)
+5394
+    await ctx.send(embed=embed)
+5441
+await ctx.send(embed=embed)
+5537
+await ctx.send(embed=embed)
+5558
+await ctx.send(embed=embed)
+5578
+await ctx.send(embed=embed)
+5590
+    await ctx.send(embed=embed)
+5604
+    await ctx.send(embed=embed)
+5619
+    await ctx.send(embed=embed)
+5685
+await ctx.send(embed=embed)
+5781
+await ctx.send(embed=embed)
+5792
+message = await ctx.send(embed=embed)
+5885
+await ctx.send(embed=embed)
+5899
+    await ctx.send(embed=embed)
+5929
+await ctx.send(embed=embed)
+164
+await ctx.send(embed=embed)
+31
+    await ctx.send(embed=embed)
+63
+    await ctx.send(embed=embed)
+97
+    await ctx.send(embed=embed)
+137
+    await ctx.send(embed=embed)
+172
+    await ctx.send(embed=embed)
+208
+    await ctx.send(embed=embed)
+245
+    await ctx.send(embed=embed)
+254
+    await ctx.send(embed=embed)
+264
+    await ctx.send(embed=embed)
+492
+await ctx.send(embed=embed)
+2045
+message = await ctx.send(embed=embed)
+2290
+        await ctx.send(embed=embed)
+2297
+    await ctx.send(embed=embed)
+2459
+                await ctx.send(embed=embed)
+2469
+                await ctx.send(embed=embed)
+2479
+                await ctx.send(embed=embed)
+2510
+        await ctx.send(embed=embed)
+2536
+await ctx.send(embed=embed)
+2551
+    await ctx.send(embed=embed)
+2561
+    await ctx.send(embed=embed)
+2570
+    await ctx.send(embed=embed)
+2575
+    await ctx.send(embed=embed)
+2657
+await ctx.send(embed=embed)
+2699
+    await ctx.send(embed=embed)
+2730
+    await ctx.send(embed=embed)
+2848
+message = await ctx.send(embed=embed)
+3079
+    await ctx.send(embed=embed)
+3098
+    await ctx.send(embed=embed)
+3174
+message = await ctx.send(embed=embed)
+3293
+            await ctx.send(embed=embed)
+3314
+    await ctx.send(embed=embed)
+3405
+await ctx.send(embed=embed)
+3525
+await ctx.send(embed=embed)
+3543
+        await ctx.send(embed=embed)
+3558
+await ctx.send(embed=embed)
+3585
+    await ctx.send(embed=embed)
+3600
+    await ctx.send(embed=embed)
+3635
+    await ctx.send(embed=embed)
+3653
+    await ctx.send(embed=embed)
+3702
+await ctx.send(embed=embed)
+3718
+message = await ctx.send(embed=embed)
+3743
+    await ctx.send(embed=embed)
+3787
+await ctx.send(embed=embed)
+3798
+message = await ctx.send(embed=embed)
+3844
+message = await ctx.send(embed=embed)
+3909
+    await ctx.send(embed=embed)
+3927
+        await ctx.send(embed=embed)
+3958
+await ctx.send(embed=embed)
+3975
+    await ctx.send(embed=embed)
+4007
+await ctx.send(embed=embed)
+4115
+await ctx.send(embed=embed)
+4135
+    await ctx.send(embed=embed)
+4184
+await ctx.send(embed=embed)
+4204
+    await ctx.send(embed=embed)
+4224
+await ctx.send(embed=embed)
+4260
+await ctx.send(embed=embed)
+4283
+    await ctx.send(embed=embed)
+4303
+    await ctx.send(embed=embed)
+4316
+    await ctx.send(embed=embed)
+4359
+await ctx.send(embed=embed)
+4378
+    await ctx.send(embed=embed)
+4392
+    await ctx.send(embed=embed)
+4420
+    await ctx.send(embed=embed)
+4469
+await ctx.send(embed=embed)
+4492
+        await ctx.send(embed=embed)
+4551
+    await ctx.send(embed=embed)
+4558
+    await ctx.send(embed=embed)
+4569
+    await ctx.send("❌ Unable to determine user.")
+4662
+    await ctx.send(embed=embed)
+4669
+    await ctx.send(embed=embed)
+4692
+    await ctx.send(embed=embed)
+4712
+        await ctx.send(embed=embed)
+4761
+        await ctx.send(embed=embed)
+4806
+        await ctx.send(embed=embed)
+4868
+    await ctx.send(embed=embed)
+4875
+    await ctx.send(embed=embed)
+5004
+    await ctx.send(embed=embed)
+5011
+    await ctx.send(embed=embed)
+5044
+    await ctx.send(embed=embed)
+5076
+    await ctx.send(embed=embed)
+5110
+    await ctx.send(embed=embed)
+5150
+    await ctx.send(embed=embed)
+5185
+    await ctx.send(embed=embed)
+5221
+    await ctx.send(embed=embed)
+5258
+    await ctx.send(embed=embed)
+5267
+    await ctx.send(embed=embed)
+5277
+    await ctx.send(embed=embed)
+5505
+await ctx.send(embed=embed)
+5522
+    await ctx.send(embed=embed)
+5532
+    await ctx.send(embed=embed)
+5543
+    await ctx.send(embed=embed)
+5555
+    await ctx.send(embed=embed)
+5598
+await ctx.send(embed=embed)
+5615
+    await ctx.send(embed=embed)
+5624
+    await ctx.send(embed=embed)
+5635
+    await ctx.send(embed=embed)
+5647
+    await ctx.send(embed=embed)
+5694
+await ctx.send(embed=embed)
+5790
+await ctx.send(embed=embed)
+5811
+await ctx.send(embed=embed)
+5831
+await ctx.send(embed=embed)
+5843
+    await ctx.send(embed=embed)
+5857
+    await ctx.send(embed=embed)
+5872
+    await ctx.send(embed=embed)
+5938
+await ctx.send(embed=embed)
+6034
+await ctx.send(embed=embed)
+6045
+message = await ctx.send(embed=embed)
+6138
+await ctx.send(embed=embed)
+6153
+    await ctx.send(embed=embed)
+6183
+await ctx.send(embed=embed)
