@@ -108,14 +108,14 @@ class BotConfig(BaseModel):
     # DISABLE TIME-BASED XP COMPLETELY (NO FREE XP!)
     # ==========
     xp_per_minute_normal: int = Field(default=0, description="DISABLED - No passive XP")
-    xp_per_minute_special: int = Field(default=0, description="DISABLED - No passive XP") 
+    xp_per_minute_special: int = Field(default=0, description="DISABLED - No passive XP")
     xp_per_minute_personal: int = Field(default=0, description="DISABLED - No passive XP")
 
     # Keep these but they won't be used since time-based XP is disabled
     xp_gain_interval_seconds: int = Field(default=60, description="Not used in message-only system")
     user_activity_timeout_minutes: int = Field(default=5, description="Not used for XP")
 
-    # Starting resources  
+    # Starting resources
     starting_beast_stones: int = Field(default=1000, ge=0, description="Starting beast stones for new users")
 
     # Adopt cooldowns (in hours)
@@ -549,8 +549,7 @@ class Beast:
             description=data.get('description', ''),
             caught_at=caught_at,
             owner_id=data.get('owner_id'),
-            unique_id=data.get('unique_id')
-        )
+            unique_id=data.get('unique_id'))
 
     # ✅ FIXED: power_level property moved to Beast class where it belongs
     @property
@@ -602,8 +601,7 @@ class BeastTemplate:
             max_hp=base_hp,
             attack=base_attack,
             defense=self.rarity.value * 5 + random.randint(1, 10),
-            speed=random.randint(10, 50)
-        )
+            speed=random.randint(10, 50))
 
         return Beast(
             name=self.name,
@@ -611,8 +609,7 @@ class BeastTemplate:
             tendency=self.tendency,
             location=self.location,
             stats=stats,
-            description=self.description
-        )
+            description=self.description)
 
 
 @dataclass
@@ -739,7 +736,7 @@ class SQLiteDatabase(DatabaseInterface):
                     battle_data TEXT,
                     battle_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user1_id) REFERENCES users (user_id),
-                    FOREIGN KEY (user2_id) REFERENCES users (user_id)
+                    FOREIGNKEY (user2_id) REFERENCES users (user_id)
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_beasts_owner ON beasts(owner_id);
@@ -797,8 +794,8 @@ class SQLiteDatabase(DatabaseInterface):
 
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO users 
-                    (user_id, username, spirit_stones, total_catches, total_battles, wins, losses, 
+                    INSERT OR IGNORE INTO users
+                    (user_id, username, spirit_stones, total_catches, total_battles, wins, losses,
                      has_used_adopt_legend, has_used_adopt_mythic, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (user.user_id, user.username, user.spirit_stones,
@@ -821,7 +818,7 @@ class SQLiteDatabase(DatabaseInterface):
             try:
                 conn.execute(
                     """
-                    UPDATE users SET 
+                    UPDATE users SET
                     username=?, spirit_stones=?, last_daily=?, last_adopt=?, last_xp_gain=?,
                     active_beast_id=?, total_catches=?, total_battles=?, wins=?, losses=?,
                     has_used_adopt_legend=?, has_used_adopt_mythic=?
@@ -1913,11 +1910,12 @@ class BeastTemplateManager:
 
         if rarity_weights is None:
             rarity_weights = {
-                BeastRarity.COMMON: 27,
-                BeastRarity.UNCOMMON: 40,
-                BeastRarity.RARE: 27,
-                BeastRarity.EPIC: 5,
-                BeastRarity.LEGENDARY: 1
+                BeastRarity.COMMON: 50,
+                BeastRarity.UNCOMMON: 30,
+                BeastRarity.RARE: 17,
+                BeastRarity.EPIC: 2,
+                BeastRarity.LEGENDARY: 1,
+                BeastRarity.MYTHIC: 0.1
             }
 
         available_templates = []
@@ -1946,7 +1944,7 @@ class BeastTemplateManager:
     def get_template_by_name(self, name: str) -> Optional[BeastTemplate]:
         """Get specific template by name"""
         return self.templates.get(name)
-    
+
 class UserRoleManager:
     """Manages user roles and permissions"""
 
@@ -2134,7 +2132,7 @@ class ImmortalBeastsBot(commands.Bot):
 
         # Handle message-based XP only (removed activity tracking)
         if (message.channel.id in self.config.xp_chat_channel_ids
-            and hasattr(message, 'content') 
+            and hasattr(message, 'content')
             and len(message.content) > 3):
 
             user = await self.get_or_create_user(message.author.id, str(message.author))
@@ -2224,8 +2222,7 @@ class ImmortalBeastsBot(commands.Bot):
                         embed.add_field(
                             name="🌟 Bonus Stats (Level 5 Multiple)!",
                             value="\n".join(bonus_text),
-                            inline=False
-                        )
+                            inline=False)
 
                     # ✅ Show actual XP amount with role bonuses
                     embed.set_footer(text=f"Message XP: +{xp_amount}")
@@ -2480,7 +2477,8 @@ async def daily_stone_reward(ctx):
                     inline=True)
     embed.add_field(
         name="⏰ Next Claim",
-        value=f"<t:{int((now + datetime.timedelta(hours=24)).timestamp())}:R>",
+        value=
+        f"<t:{int((now + datetime.timedelta(hours=24)).timestamp())}:R>",
         inline=False)
 
     embed.set_footer(text="Come back tomorrow for another 100 beast stones!")
@@ -2553,7 +2551,7 @@ async def spawn_info(ctx):
     embed.add_field(
         name="⏰ Spawn Interval",
         value=
-        f"{ctx.bot.config.spawn_interval_min}-{ctx.bot.config.spawn_interval_max} minutes",
+        f"{ctx.bot.config.fixed_spawn_interval_minutes}-{ctx.bot.config.fixed_spawn_interval_minutes} minutes",
         inline=True)
 
     # Next spawn time - KEEP THIS UNCHANGED
@@ -2937,7 +2935,8 @@ async def sacrifice_beast(ctx, beast_id: int):
             # Epic footer
             embed.add_field(
                 name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                value="⚡ **IMMORTAL BEAST SHRINE** • The ritual is complete\n"
+                value=
+                "⚡ **IMMORTAL BEAST SHRINE** • The ritual is complete\n"
                 "🌟 *The shrine remembers your sacrifice and grants power*\n"
                 "🔥 *Your remaining beasts grow stronger from this blessing*",
                 inline=False)
@@ -2957,7 +2956,7 @@ async def sacrifice_beast(ctx, beast_id: int):
                 f"The shrine respects your bond\n"
                 f"No sacrifice was made\n"
                 f"```\n"
-                f"💙 **Sometimes preservation is the greater wisdom**",
+                f"💙 **{target_beast.name} appreciates your loyalty**",
                 inline=False)
             embed.add_field(
                 name="🔄 **Available Options**",
@@ -3226,40 +3225,39 @@ async def release_beast(ctx, beast_id: int):
 # ADD THIS POWERFUL DEBUGGING COMMAND:
 
 
-    from typing import Optional
-
-    @commands.command(name='addxpchannel')
-    @commands.has_permissions(administrator=True)
-    async def add_xp_channel(self, ctx, channel: Optional[discord.TextChannel] = None):  # ✅ Fixed type annotation
-        """Add a channel to XP gain list (admin only)"""
-        if channel is None:
-            channel = ctx.channel
-            # ✅ ADDED: Ensure ctx.channel is actually a TextChannel
-            if not isinstance(channel, discord.TextChannel):
-                embed = discord.Embed(
-                    title="❌ Invalid Channel",
-                    description="This command can only be used in text channels.",
-                    color=0xFF0000)
-                await ctx.send(embed=embed)
-                return
-
-        if channel.id in ctx.bot.config.xp_chat_channel_ids:
+@commands.command(name='addxpchannel')
+@commands.has_permissions(administrator=True)
+async def add_xp_channel(self, ctx, channel: Optional[discord.TextChannel] = None):  # ✅ Fixed type annotation
+    """Add a channel to XP gain list (admin only)"""
+    if channel is None:
+        channel = ctx.channel
+        # ✅ ADDED: Ensure ctx.channel is actually a TextChannel
+        if not isinstance(channel, discord.TextChannel):
             embed = discord.Embed(
-                title="⚠️ Already Added",
-                description=f"{channel.mention} is already in the XP channel list",
-                color=0xFFAA00)
-        else:
-            ctx.bot.config.xp_chat_channel_ids.append(channel.id)
-            embed = discord.Embed(
-                title="✅ XP Channel Added",
-                description=f"{channel.mention} has been added to XP channels",
-                color=0x00FF00)
-            embed.add_field(
-                name="⚠️ Note",
-                value="This change is temporary. Update environment variables for permanent change.",
-                inline=False)
+                title="❌ Invalid Channel",
+                description="This command can only be used in text channels.",
+                color=0xFF0000)
+            await ctx.send(embed=embed)
+            return
 
-        await ctx.send(embed=embed)
+    if channel.id in ctx.bot.config.xp_chat_channel_ids:
+        embed = discord.Embed(
+            title="⚠️ Already Added",
+            description=f"{channel.mention} is already in the XP channel list",
+            color=0xFFAA00)
+    else:
+        ctx.bot.config.xp_chat_channel_ids.append(channel.id)
+        embed = discord.Embed(
+            title="✅ XP Channel Added",
+            description=f"{channel.mention} has been added to XP channels",
+            color=0x00FF00)
+        embed.add_field(
+            name="⚠️ Note",
+            value=
+            "This change is temporary. Update environment variables for permanent change.",
+            inline=False)
+
+    await ctx.send(embed=embed)
 
 
 
@@ -3469,7 +3467,6 @@ async def xp_status(self, ctx):  # ✅ Added missing 'self' parameter
     await ctx.send(embed=embed)
 
 
-    
 @commands.command(name='removexp')
 @commands.has_permissions(administrator=True)
 async def remove_xp_channel(self, ctx, channel: Optional[discord.TextChannel] = None):  # ✅ Fixed
@@ -4089,10 +4086,9 @@ async def set_active_beast(ctx, beast_id: int):
         description=f"**{target_beast.name}** is now your active beast!\n"
         f"It will gain XP when you chat in XP channels",
         color=target_beast.rarity.color)
-    embed.add_field(
-        name="Beast",
-        value=f"#{beast_id} {target_beast.name} {target_beast.rarity.emoji}",
-        inline=True)
+    embed.add_field(name="Beast",
+                    value=f"#{beast_id} {target_beast.name} {target_beast.rarity.emoji}",
+                    inline=True)
     embed.add_field(name="Level", value=target_beast.stats.level, inline=True)
     embed.add_field(name="XP per Message",
                     value=f"+{ctx.bot.config.xp_per_message}",
@@ -4208,7 +4204,7 @@ async def heal_beast(ctx, beast_id: int):
     embed = discord.Embed(
         title="✨ Beast Healed!",
         description=
-        f"**{target_beast.name}** has been fully healed!\n{target_beast.rarity.emoji}",
+        f"**{target_beast.name}** has been fully healed!\n{target_beast.rarity.color}",
         color=target_beast.rarity.color)
 
     embed.add_field(name="🐉 Beast Info",
@@ -4731,7 +4727,6 @@ async def leaderboard(self, ctx, category: str = "beasts", limit: int = 10):  # 
         await ctx.send(embed=embed)
 
 
-
 @commands.command(name='serverbeasts', aliases=['serverstats'])
 async def server_beast_stats(ctx):
     """Show server-wide beast statistics"""
@@ -4913,7 +4908,8 @@ async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
                         value=f"```diff\n" +
                         f"- Target: {opponent.display_name}\n" +
                         f"- Type: Discord Bot\n" +
-                        f"- Status: Cannot participate in battles\n" + f"```",
+                        f"- Status: Cannot participate in battles\n" +
+                        f"```",
                         inline=False)
         embed.add_field(name="👥 **Valid Opponents**",
                         value="✅ **Human players** in this server\n" +
@@ -4961,8 +4957,7 @@ async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
             f"🔍 Look around the server for other beast masters!",
             inline=False)
         embed.set_footer(
-            text=
-            "⚔️ IMMORTAL BEAST ARENA • Challenge others to prove your worth!")
+            text="⚔️ IMMORTAL BEAST ARENA • Challenge others to prove your worth!")
         embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
@@ -5001,8 +4996,7 @@ async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
                         inline=False)
         embed.set_footer(
             text=
-            "⚔️ IMMORTAL BEAST ARENA • Every legend starts with a single beast!"
-        )
+            "⚔️ IMMORTAL BEAST ARENA • Every legend starts with a single beast!")
         embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
@@ -5031,13 +5025,12 @@ async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
         embed.add_field(
             name="🔄 **Alternative Opponents**",
             value=
-            f"📊 `{ctx.bot.config.prefix}leaderboard` - Find active beast masters\n"
+            f"📊 `{ctx.bot.config.prefix}leaderboard` - See top players\n"
             + f"👥 Look for users with beast collections\n" +
             f"🎯 Challenge someone who's ready to fight!",
             inline=False)
         embed.set_footer(
-            text=
-            "⚔️ IMMORTAL BEAST ARENA • Help others start their beast journey!")
+            text="⚔️ IMMORTAL BEAST ARENA • Help others start their beast journey!")
         embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
         return
@@ -5108,132 +5101,16 @@ async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
             f"🎯 **Try again later** when they're more active\n" +
             f"👥 **Find another opponent** who's ready to battle\n" +
             f"📊 Check `{ctx.bot.config.prefix}leaderboard` for active players",
-            inline=False)
-        embed.set_footer(
-            text="⚔️ IMMORTAL BEAST ARENA • Patience leads to epic battles!")
-        embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
-        return
-
-    if challenger_beast[1].stats.hp < challenger_beast[1].stats.max_hp * 0.1:
-        embed = discord.Embed(
-            title="⚠️ Beast Too Injured",
-            description=f"{challenger_beast[1].name} is too injured to battle! Heal them first.",
-            color=0xFF8800)
-        await ctx.send(embed=embed)
-        return
-
-    # Check if opponent's beast is too injured to battle  
-    if opponent_beast[1].stats.hp < opponent_beast[1].stats.max_hp * 0.1:
-        embed = discord.Embed(
-            title="⚠️ Opponent's Beast Too Injured", 
-            description=f"{opponent_beast[1].name} is too injured to battle! They need to heal first.",
-            color=0xFF8800)
-        await ctx.send(embed=embed)
-        return
-
-    # Simulate the battle
-    battle_result = await ctx.bot.battle_engine.simulate_battle(
-        challenger_beast[1], opponent_beast[1])
-
-    # Determine winners and update stats
-    challenger_user = await ctx.bot.get_or_create_user(ctx.author.id,
-                                                       str(ctx.author))
-    opponent_user = await ctx.bot.get_or_create_user(opponent.id,
-                                                     str(opponent))
-
-    challenger_user.total_battles += 1
-    opponent_user.total_battles += 1
-
-    if battle_result['winner'] == challenger_beast[1].name:
-        challenger_user.wins += 1
-        opponent_user.losses += 1
-        winner_user = ctx.author
-        loser_user = opponent
-    elif battle_result['winner'] == opponent_beast[1].name:
-        opponent_user.wins += 1
-        challenger_user.losses += 1
-        winner_user = opponent
-        loser_user = ctx.author
-    else:
-        winner_user = None
-        loser_user = None
-
-    await ctx.bot.db.update_user(challenger_user)
-    await ctx.bot.db.update_user(opponent_user)
-
-    # ADD THE HP PERSISTENCE FIX HERE - after user stats, before embed
-    # Apply battle damage to original beasts
-    challenger_beast_obj = challenger_beast[1]
-    opponent_beast_obj = opponent_beast[1]
-
-    # Update HP based on battle results
-    challenger_final_hp = battle_result['final_hp'][challenger_beast_obj.name]
-    opponent_final_hp = battle_result['final_hp'][opponent_beast_obj.name]
-
-    challenger_beast_obj.stats.hp = challenger_final_hp
-    opponent_beast_obj.stats.hp = opponent_final_hp
-
-    # Save the damaged beasts to database
-    await ctx.bot.db.update_beast(challenger_beast[0], challenger_beast_obj)
-    await ctx.bot.db.update_beast(opponent_beast[0], opponent_beast_obj)
-
-    if battle_result['result'] == BattleResult.WIN:
-        if winner_user == ctx.author:
-            color = 0x00FF7F  # Bright victory green
-            title_icon = "🏆"
-            result_text = "**VICTORY**"
-            victory_gradient = "🟢🟡🟠🔴"
-        else:
-            color = 0xFF4500  # Dramatic defeat orange-red
-            title_icon = "💀"
-            result_text = "**DEFEAT**"
-            victory_gradient = "🔴🟠🟡🟢"
-    elif battle_result['result'] == BattleResult.LOSS:
-        if winner_user == ctx.author:
-            color = 0x00FF7F
-            title_icon = "🏆"
-            result_text = "**VICTORY**"
-            victory_gradient = "🟢🟡🟠🔴"
-        else:
-            color = 0xFF4500
-            title_icon = "💀"
-            result_text = "**DEFEAT**"
-            victory_gradient = "🔴🟠🟡🟢"
-    else:
-        color = 0xFFD700  # Golden draw
-        title_icon = "⚖️"
-        result_text = "**DRAW**"
-        victory_gradient = "🟡🟠🟡🟠"
-
-    # Create the main embed with cinematic styling
-    embed = discord.Embed(color=color)
-
-    # Epic header design
-    embed.add_field(
-        name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        value=f"# {title_icon} ⚔️ **IMMORTAL BEAST ARENA** ⚔️ {title_icon}\n" +
-        f"## {victory_gradient} {result_text} {victory_gradient[::-1]}\n" +
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        inline=False)
-
-    # Fighter showcase with detailed stats
-    embed.add_field(
-        name="🥊 **COMBATANTS**",
-        value=f"### 🔵 {ctx.author.display_name}'s Champion\n" + f"```ansi\n" +
-        f"\u001b[1;36m{challenger_beast_obj.name}\u001b[0m {challenger_beast_obj.rarity.emoji}\n"
-        +
-        f"Level: {challenger_beast_obj.stats.level} | Power: {challenger_beast_obj.power_level:,}\n"
-        +
-        f"ATK: {challenger_beast_obj.stats.attack} | DEF: {challenger_beast_obj.stats.defense} | SPD: {challenger_beast_obj.stats.speed}\n"
-        + f"```\n" + f"### 🔴 {opponent.display_name}'s Champion\n" +
+            ansi\n" +
+        f"\u001b[1;36m{challenger_beast_obj.name}\u001b[0m {challenger_beast_obj.rarity.emoji}\n" +
+        f"Level: {challenger_beast_obj.stats.level} | Power: {challenger_beast_obj.power_level:,}\n" +
+        f"ATK: {challenger_beast_obj.stats.attack} | DEF: {challenger_beast_obj.stats.defense} | SPD: {challenger_beast_obj.stats.speed}\n" +
+        f"```\n" + f"### 🔴 {opponent.display_name}'s Champion\n" +
         f"```ansi\n" +
-        f"\u001b[1;31m{opponent_beast_obj.name}\u001b[0m {opponent_beast_obj.rarity.emoji}\n"
-        +
-        f"Level: {opponent_beast_obj.stats.level} | Power: {opponent_beast_obj.power_level:,}\n"
-        +
-        f"ATK: {opponent_beast_obj.stats.attack} | DEF: {opponent_beast_obj.stats.defense} | SPD: {opponent_beast_obj.stats.speed}\n"
-        + f"```",
+        f"\u001b[1;31m{opponent_beast_obj.name}\u001b[0m {opponent_beast_obj.rarity.emoji}\n" +
+        f"Level: {opponent_beast_obj.stats.level} | Power: {opponent_beast_obj.power_level:,}\n" +
+        f"ATK: {opponent_beast_obj.stats.attack} | DEF: {opponent_beast_obj.stats.defense} | SPD: {opponent_beast_obj.stats.speed}\n" +
+        f"```",
         inline=False)
 
     # Battle analytics with enhanced visuals
@@ -5265,8 +5142,8 @@ async def battle_command(self, ctx, opponent: Optional[discord.Member] = None):
             inline=True)
     else:
         embed.add_field(name="⚖️ **STALEMATE**",
-                        value=f"```css\n" + f"[Both Warriors Stand]\n" +
-                        f"[Honor Preserved]\n" + f"[Rematch Awaited]\n" +
+                        value=f"```css\n" + "[Both Warriors Stand]\n" +
+                        "[Honor Preserved]\n" + "[Rematch Awaited]\n" +
                         f"```\n" + f"🤝 **Honorable Draw**",
                         inline=True)
 
@@ -5381,8 +5258,7 @@ async def adopt_legend_beast(ctx):
     if user.has_used_adopt_legend:
         embed = discord.Embed(
             title="❌ Already Used",
-            description=
-            "You have already used your one-time legendary adoption!",
+            description="You have already used your one-time legendary adoption!",
             color=0xFF0000)
         await ctx.send(embed=embed)
         return
@@ -5645,9 +5521,7 @@ async def adoption_status(ctx):
     await ctx.send(embed=embed)
 
 
-# Replace the existing setchannel and removechannel commands with these:
-
-
+# Set current channel as THE spawn channel
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
 async def set_spawn_channel(ctx):
