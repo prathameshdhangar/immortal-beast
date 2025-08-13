@@ -51,16 +51,11 @@ class BotConfig(BaseModel):
         description="Maximum total backup size in MB")
     backup_enabled: bool = Field(
         default=True, description="Enable/disable automatic backups")
-    spawn_interval_min: int = Field(
-        default=15,
-        ge=5,
-        le=120,
-        description="Minimum spawn interval in minutes")
-    spawn_interval_max: int = Field(
+    fixed_spawn_interval_minutes: int = Field(
         default=45,
         ge=5,
         le=120,
-        description="Maximum spawn interval in minutes")
+        description="Fixed spawn interval in minutes (consistent 45min spawning)")
     log_level: str = Field(default="INFO", description="Logging level")
 
     api_max_requests_per_minute: int = Field(
