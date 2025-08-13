@@ -2,18 +2,18 @@
 A comprehensive Discord bot for beast collection, battles, and trading.
 """
 
-import asyncio
+import asyncio 
 import datetime
 import json
 import logging
 import os
-import random
+import random 
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, Callable
 import sqlite3
 import functools
 import discord
@@ -24,7 +24,7 @@ import threading
 from flask import Flask
 import base64
 import aiohttp
-from rate_limiter import RateLimiter
+import rate_limiter
 
 
 # Configuration Management
@@ -322,6 +322,76 @@ class UserRole(Enum):
     NORMAL = "normal"
     SPECIAL = "special"
     PERSONAL = "personal"
+
+class AdvancedRateLimiter:
+    def __init__(self):
+        self.global_limit = 50  # Discord's global limit per second
+        self.route_limits = defaultdict(lambda: {'limit': 5, 'remaining': 5, 'reset_after': 0})
+        self.global_remaining = self.global_limit
+        self.global_reset_time = time.time() + 1
+        self.last_request_time = 0
+        self._lock = asyncio.Lock()
+        self.retry_attempts = defaultdict(int)
+        self.max_retries = 5
+
+    async def wait_if_rate_limited(self, route: str = "default") -> bool:
+        async with self._lock:
+            current_time = time.time()
+
+            if current_time >= self.global_reset_time:
+                self.global_remaining = self.global_limit
+                self.global_reset_time = current_time + 1
+
+            route_info = self.route_limits[route]
+            if current_time >= route_info['reset_after']:
+                route_info['remaining'] = route_info['limit']
+                route_info['reset_after'] = current_time + 60
+
+            if self.global_remaining <= 0:
+                wait_time = self.global_reset_time - current_time
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
+                    return True
+
+            if route_info['remaining'] <= 0:
+                wait_time = route_info['reset_after'] - current_time
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
+                    return True
+
+            self.global_remaining -= 1
+            route_info['remaining'] -= 1
+            self.last_request_time = current_time
+            return False
+
+    async def execute_with_retry(self, func: Callable, *args, route: str = "default", **kwargs) -> Any:
+        attempt = 0
+        while attempt < self.max_retries:
+            try:
+                await self.wait_if_rate_limited(route)
+                result = await func(*args, **kwargs)
+                self.retry_attempts[route] = 0
+                return result
+
+            except Exception as e:
+                if hasattr(e, 'status') and e.status == 429:
+                    attempt += 1
+                    self.retry_attempts[route] = attempt
+
+                    retry_after = getattr(e, 'retry_after', None)
+                    if retry_after is None:
+                        base_delay = min(60, (2 ** attempt))
+                        jitter = random.uniform(0, 0.1 * base_delay)
+                        retry_after = base_delay + jitter
+
+                    await asyncio.sleep(retry_after)
+
+                    if attempt >= self.max_retries:
+                        raise
+                else:
+                    raise
+
+        raise Exception(f"Failed to execute after {self.max_retries} attempts")
 
 
 # Data Models
@@ -2042,7 +2112,8 @@ async def select_beast_for_battle(
             f"Level {beast.stats.level} | HP: {beast.stats.hp}/{beast.stats.max_hp} | Power: {beast.power_level}",
             inline=False)
 
-    message = await ctx.send(embed=embed)
+    message = await self.safe_send_message(ctx.channel, embed=embed)
+
 
     for i in range(len(options)):
         await message.add_reaction(number_emojis[i])
@@ -2075,8 +2146,7 @@ class ImmortalBeastsBot(commands.Bot):
                          intents=intents,
                          help_command=None)
 
-        self.api_rate_limiter = RateLimiter(
-            max_calls=config.api_max_requests_per_minute, period=60)
+        self.rate_limiter = AdvancedRateLimiter()
         #self.activity_tracker = UserActivityTracker()
         self.config = config
         self.db: DatabaseInterface = SQLiteDatabase(config.database_path)
@@ -2097,29 +2167,40 @@ class ImmortalBeastsBot(commands.Bot):
                       logging.StreamHandler()])
         self.logger = logging.getLogger(__name__)
 
-    async def safe_api_call(self, api_func, *args, **kwargs):
-        """Utility for safe API requests with backoff on 429"""
-        for attempt in range(5):
-            if not self.api_rate_limiter.can_call():
-                self.logger.warning(
-                    "Hit API rate limit, backing off before API call...")
-                await asyncio.sleep(self.config.api_retry_backoff_seconds)
-            try:
-                result = await api_func(*args, **kwargs)
-                self.api_rate_limiter.record_call()
-                return result
-            except Exception as e:
-                # ✅ FIXED: Safe attribute checking for status
-                if hasattr(e, "status") and getattr(e, "status", None) == 429:
-                    wait = self.config.api_retry_backoff_seconds * (2**attempt)
-                    self.logger.warning(
-                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})"
-                    )
-                    await asyncio.sleep(wait)
-                else:
-                    self.logger.error(f"API call failed: {e}")
-        self.logger.error("Max retries exceeded for API call")
-        return None
+    async def safe_send_message(self, channel, content, **kwargs):
+        """Send message with advanced rate limit protection"""
+        return await self.rate_limiter.execute_with_retry(
+            channel.send, 
+            content, 
+            route=f"channel_{channel.id}",
+            **kwargs
+        )
+
+    async def safe_edit_message(self, message, content, **kwargs):
+        """Edit message with rate limit protection"""
+        return await self.rate_limiter.execute_with_retry(
+            message.edit,
+            content=content,
+            route="message_edit",
+            **kwargs
+        )
+
+    async def safe_add_reaction(self, message, emoji):
+        """Add reaction with rate limit protection"""
+        return await self.rate_limiter.execute_with_retry(
+            message.add_reaction,
+            emoji,
+            route="add_reaction"
+        )
+
+    async def safe_api_call(self, api_func, *args, route="general", **kwargs):
+        """Enhanced API call wrapper using advanced rate limiter"""
+        return await self.rate_limiter.execute_with_retry(
+            api_func, 
+            *args, 
+            route=route,
+            **kwargs
+        )
 
     async def setup_hook(self):
         """Enhanced setup with automatic restoration - MESSAGE XP ONLY"""
@@ -2287,14 +2368,15 @@ class ImmortalBeastsBot(commands.Bot):
                 title="❌ Missing Permissions",
                 description="You don't have permission to use this command.",
                 color=0xFF0000)
-            await ctx.send(embed=embed)
+            await self.safe_send_message(ctx.channel, embed=embed)
+
 
         self.logger.error(f"Command error in {ctx.command}: {error}")
         embed = discord.Embed(
             title="❌ Error",
             description="An error occurred while processing your command.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
 
     async def get_or_create_user(self, user_id: int, username: str) -> User:
         """Get user or create if doesn't exist"""
@@ -2456,7 +2538,7 @@ def require_channel(channel_type: str):
                         description=
                         "This command can only be used in designated battle channels!",
                         color=0xFF0000)
-                    await ctx.send(embed=embed)
+                    await self.safe_send_message(ctx.channel, embed=embed)
                     return
 
             elif channel_type == "adopt":
@@ -2466,7 +2548,7 @@ def require_channel(channel_type: str):
                         description=
                         "This command can only be used in the adoption channel!",
                         color=0xFF0000)
-                    await ctx.send(embed=embed)
+                    await self.safe_send_message(ctx.channel, embed=embed)
                     return
 
             elif channel_type == "spawn":
@@ -2476,7 +2558,7 @@ def require_channel(channel_type: str):
                         description=
                         "This command can only be used in the beast spawn channel!",
                         color=0xFF0000)
-                    await ctx.send(embed=embed)
+                    await self.safe_send_message(ctx.channel, embed=embed)
                     return
 
             return await func(ctx, *args, **kwargs)
@@ -2507,7 +2589,7 @@ async def daily_stone_reward(ctx):
                 description=
                 f"You can claim your next daily beast stones in {hours}h {minutes}m",
                 color=0xFF8000)
-            await ctx.send(embed=embed)
+            await self.safe_send_message(ctx.channel, embed=embed)
             return
 
     daily_reward = 100
@@ -2533,7 +2615,8 @@ async def daily_stone_reward(ctx):
         inline=False)
 
     embed.set_footer(text="Come back tomorrow for another 100 beast stones!")
-    await ctx.send(embed=embed)
+    await self.safe_send_message(ctx.channel, embed=embed)
+
 
 
 # SPAWN MANAGEMENT COMMANDS - ADD THESE TO YOUR COMMANDS SECTION
@@ -2548,7 +2631,7 @@ async def force_spawn(ctx):
             title="❌ Not the Spawn Channel",
             description="This is not the designated beast spawn channel.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if there's already a beast spawned
@@ -2558,7 +2641,7 @@ async def force_spawn(ctx):
             description=
             f"There's already a {ctx.bot.current_spawned_beast.name} waiting to be caught!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
         return
 
     try:
@@ -2567,12 +2650,13 @@ async def force_spawn(ctx):
             title="✅ Beast Force Spawned",
             description="A wild beast has been manually spawned!",
             color=0x00FF00)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
     except Exception as e:
         embed = discord.Embed(title="❌ Spawn Failed",
                               description=f"Failed to spawn beast: {str(e)}",
                               color=0xFF0000)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
+
 
 
 @commands.command(name='spawninfo')
@@ -2654,7 +2738,7 @@ async def spawn_info(ctx):
                         value="None",
                         inline=False)
 
-    await ctx.send(embed=embed)
+    await self.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='sacrifice', aliases=['sac'])
@@ -2696,7 +2780,7 @@ async def sacrifice_beast(ctx, beast_id: int):
         embed.set_footer(
             text="⚡ IMMORTAL BEAST SHRINE • Double-check your beast ID!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if trying to sacrifice active beast
@@ -2727,7 +2811,7 @@ async def sacrifice_beast(ctx, beast_id: int):
             "⚡ IMMORTAL BEAST SHRINE • Your active beast cannot be sacrificed!"
         )
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Calculate sacrifice value
@@ -2845,7 +2929,7 @@ async def sacrifice_beast(ctx, beast_id: int):
                          ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
 
-    message = await ctx.send(embed=embed)
+    message = await self.safe_send_message(ctx.channel, embed=embed)
     await message.add_reaction("✅")
     await message.add_reaction("❌")
 
@@ -3076,7 +3160,7 @@ async def release_beast(ctx, beast_id: int):
                         f"- Result: NOT IN COLLECTION\n"
                         f"```",
                         inline=False)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if trying to release active beast
@@ -3095,7 +3179,7 @@ async def release_beast(ctx, beast_id: int):
                         f"```\n"
                         f"🛡️ **Your active companion cannot be released!**",
                         inline=False)
-        await ctx.send(embed=embed)
+        await self.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Cool Release Confirmation
@@ -3171,7 +3255,7 @@ async def release_beast(ctx, beast_id: int):
                          ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
 
-    message = await ctx.send(embed=embed)
+    message = await self.safe_send_message(ctx.channel, embed=embed)
     await message.add_reaction("✅")
     await message.add_reaction("❌")
 

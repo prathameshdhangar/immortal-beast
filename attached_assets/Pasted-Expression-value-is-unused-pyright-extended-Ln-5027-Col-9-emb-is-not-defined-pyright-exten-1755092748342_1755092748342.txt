@@ -1,0 +1,90 @@
+Expression value is unused
+(pyright-extended)
+Ln 5027, Col 9
+"emb" is not defined
+(pyright-extended)
+Ln 5027, Col 9
+SyntaxError: Got unexpected token �
+(pyright-extended)
+Ln 5027, Col 12
+Statements must be separated by newlines or semicolons
+(pyright-extended)
+Ln 5027, Col 12
+Invalid character "\udd49" in token
+(pyright-extended)
+Ln 5027, Col 12
+Unexpected indentation
+(pyright-extended)
+Ln 5028, Col 1
+Expected expression
+(pyright-extended)
+Ln 5029, Col 33
+Expected expression
+(pyright-extended)
+Ln 5030, Col 75
+Expected expression
+(pyright-extended)
+Ln 5031, Col 74
+Expression value is unused
+(pyright-extended)
+Ln 5032, Col 13
+Expected expression
+(pyright-extended)
+Ln 5033, Col 25
+Statements must be separated by newlines or semicolons
+(pyright-extended)
+Ln 5033, Col 25
+"(" was not closed
+(pyright-extended)
+Ln 5193, Col 24
+Expected 0 positional arguments
+(pyright-extended)
+Ln 5194, Col 8
+Expected expression
+(pyright-extended)
+Ln 5194, Col 8
+SyntaxError: Got unexpected token �
+(pyright-extended)
+Ln 5194, Col 8
+Positional argument cannot appear after keyword arguments
+(pyright-extended)
+Ln 5194, Col 8
+"opponent_be" is not defined
+(pyright-extended)
+Ln 5378, Col 61
+SyntaxError: Got unexpected token �
+(pyright-extended)
+Ln 5378, Col 72
+Unterminated expression in f-string; expecting "}"
+(pyright-extended)
+Ln 5378, Col 72
+SyntaxError: Expected FStringEnd, found name
+(pyright-extended)
+Ln 5378, Col 73
+SyntaxError: Expected ',', found FStringMiddle
+(pyright-extended)
+Ln 5378, Col 80
+SyntaxError: f-string: single '}' is not allowed
+(pyright-extended)
+Ln 5378, Col 94
+SyntaxError: Expected ',', found FStringMiddle
+(pyright-extended)
+Ln 5378, Col 95
+SyntaxError: Expected ',', found FStringEnd
+(pyright-extended)
+Ln 5378, Col 97
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5379, Col 9
+Statements must be separated by newlines or semicolons
+(pyright-extended)
+Ln 5385, Col 5
+Statements must be separated by newlines or semicolons
+(pyright-extended)
+Ln 5387, Col 5
+Statements must be separated by newlines or semicolons
+(pyright-extended)
+Ln 5392, Col 5
+Expected "else"
+(pyright-extended)
+Ln 5401, Col 19
