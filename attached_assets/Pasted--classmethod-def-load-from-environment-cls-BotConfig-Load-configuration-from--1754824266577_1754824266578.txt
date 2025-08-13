@@ -1,0 +1,355 @@
+ @classmethod
+    def load_from_environment(cls) -> "BotConfig":
+        """Load configuration from environment variables"""
+        token = os.getenv('DISCORD_BOT_TOKEN')
+        if not token:
+            raise ValueError(
+                "DISCORD_BOT_TOKEN environment variable is required")
+
+        return cls(token=token,
+                   prefix=os.getenv('BOT_PREFIX', '!'),
+                   database_path='/tmp/immortal_beasts.db',
+                   special_role_ids=[
+                       int(x.strip())
+                       for x in os.getenv('SPECIAL_ROLE_IDS', '').split(',')
+                       if x.strip()
+                   ],
+                   personal_role_id=int(os.getenv('PERSONAL_ROLE_ID', '0')),
+                   battle_channel_ids=[
+                       int(x.strip())
+                       for x in os.getenv('BATTLE_CHANNEL_IDS', '').split(',')
+                       if x.strip()
+                   ],
+                   adopt_channel_id=int(os.getenv('ADOPT_CHANNEL_ID', '0')),
+                   spawn_channel_id=int(os.getenv('SPAWN_CHANNEL_ID', '0')))
+
+    @classmethod
+    def load_from_environment(cls) -> 'BotConfig':
+        """Load configuration from environment variables (for production)"""
+        token = os.getenv('DISCORD_BOT_TOKEN')
+        if not token:
+            raise ValueError(
+                "DISCORD_BOT_TOKEN environment variable is required")
+
+        # Parse battle channel IDs from environment (comma-separated)
+        battle_channel_ids = []
+        battle_channels_env = os.getenv('BATTLE_CHANNEL_IDS', '')
+        if battle_channels_env:
+            battle_channel_ids = [
+                int(channel_id.strip())
+                for channel_id in battle_channels_env.split(',')
+                if channel_id.strip()
+            ]
+        # Parse role IDs from environment (comma-separated)
+        special_role_ids = []
+        special_roles_env = os.getenv(
+            'SPECIAL_ROLE_IDS', '1393927051685400790,1393094845479780426')
+        if special_roles_env:
+            special_role_ids = [
+                int(role_id.strip())
+                for role_id in special_roles_env.split(',') if role_id.strip()
+            ]
+
+        # Parse XP channel IDs from environment (comma-separated)
+        xp_channel_ids = []
+        xp_channels_env = os.getenv(
+            'XP_CHANNEL_IDS',
+            '1393424880787259482,1393626191935705198,1394289930515124325,1393163125850640414'
+        )
+        if xp_channels_env:
+            xp_channel_ids = [
+                int(channel_id.strip())
+                for channel_id in xp_channels_env.split(',')
+                if channel_id.strip()
+            ]
+
+        # Determine backup settings based on environment
+        if os.getenv('PORT'):  # Production
+            backup_retention = 3  # Keep only 3 backups in production
+            backup_interval = 12  # Backup twice daily
+        else:  # Development
+            backup_retention = 10  # Keep 10 backups locally
+            backup_interval = 6  # Backup every 6 hours
+
+        return cls(
+            token=token,
+            prefix=os.getenv('BOT_PREFIX', '!'),
+            database_path='/tmp/immortal_beasts.db',
+            special_role_ids=special_role_ids,
+            personal_role_id=int(
+                os.getenv('PERSONAL_ROLE_ID', '1393176170601775175')),
+            xp_chat_channel_ids=xp_channel_ids,
+            log_level=os.getenv('LOG_LEVEL', 'INFO'),
+            backup_interval_hours=int(
+                os.getenv('BACKUP_INTERVAL_HOURS', str(backup_interval))),
+            backup_retention_count=int(
+                os.getenv('BACKUP_RETENTION_COUNT', str(backup_retention))),
+            backup_max_size_mb=int(os.getenv('BACKUP_MAX_SIZE_MB', '100')),
+            backup_enabled=os.getenv('BACKUP_ENABLED',
+                                     'true').lower() == 'true',
+            fixed_spawn_interval_minutes=int(
+                os.getenv('FIXED_SPAWN_INTERVAL_MINUTES', '45')),
+            xp_per_message=int(os.getenv('XP_PER_MESSAGE', '5')),
+            xp_cooldown_seconds=int(os.getenv('XP_COOLDOWN_SECONDS', '20')),
+            starting_beast_stones=int(
+                os.getenv('STARTING_BEAST_STONES', '1000')),
+            adopt_cooldown_hours=int(os.getenv('ADOPT_COOLDOWN_HOURS', '48')),
+            battle_channel_ids=battle_channel_ids,
+            adopt_channel_id=int(
+                os.getenv('ADOPT_CHANNEL_ID', '1397783378618748948')),
+            spawn_channel_id=int(
+                os.getenv('SPAWN_CHANNEL_ID', '1397783188394475520')),
+            api_max_requests_per_minute=int(
+                os.getenv('API_MAX_REQUESTS_PER_MINUTE', '60')),
+            api_retry_backoff_seconds=int(
+                os.getenv('API_RETRY_BACKOFF_SECONDS', '2')))
+
+
+# Enums and Constants
+
+
+class BeastRarity(Enum):
+    """Beast rarity levels"""
+    COMMON = 1
+    UNCOMMON = 2
+    RARE = 3
+    EPIC = 4
+    LEGENDARY = 5
+    MYTHIC = 6
+
+    @property
+    def color(self) -> int:
+        """Discord embed color for this rarity"""
+        colors = {
+            1: 0x808080,  # Gray
+            2: 0x00FF00,  # Green
+            3: 0x0080FF,  # Blue
+            4: 0x8000FF,  # Purple
+            5: 0xFF8000,  # Orange
+            6: 0xFF0000,  # Red
+        }
+        return colors[self.value]
+
+    @property
+    def catch_rate(self) -> int:
+        """Base catch rate percentage"""
+        rates = {1: 90, 2: 80, 3: 65, 4: 30, 5: 2, 6: 0.1}
+        return rates[self.value]
+
+    @property
+    def emoji(self) -> str:
+        """Star emoji representation"""
+        return '⭐' * self.value
+
+
+class BattleResult(Enum):
+    """Battle outcome types"""
+    WIN = "win"
+    LOSS = "loss"
+    DRAW = "draw"
+
+
+class UserRole(Enum):
+    """User role types for beast limits"""
+    NORMAL = "normal"
+    SPECIAL = "special"
+    PERSONAL = "personal"
+
+
+# Data Models
+
+
+@dataclass
+class BeastStats:
+    """Beast statistics"""
+    hp: int
+    max_hp: int
+    attack: int
+    defense: int = 0
+    speed: int = 0
+    level: int = 1
+    exp: int = 0
+
+    def get_level_up_requirements(self, rarity: BeastRarity) -> int:
+        """Get XP required for next level based on rarity"""
+        base_requirements = {
+            BeastRarity.COMMON: 100,
+            BeastRarity.UNCOMMON: 150,
+            BeastRarity.RARE: 200,
+            BeastRarity.EPIC: 300,
+            BeastRarity.LEGENDARY: 500,
+            BeastRarity.MYTHIC: 800
+        }
+        base_req = base_requirements[rarity]
+        return int(base_req * (self.level**1.2))
+
+    def get_stat_gains(self,
+                       rarity: BeastRarity) -> Dict[str, Tuple[int, int]]:
+        """Get stat gain ranges based on rarity"""
+        stat_ranges = {
+            BeastRarity.COMMON: {
+                'hp': (8, 15),
+                'attack': (2, 5),
+                'defense': (1, 3),
+                'speed': (1, 3)
+            },
+            BeastRarity.UNCOMMON: {
+                'hp': (10, 18),
+                'attack': (3, 6),
+                'defense': (2, 4),
+                'speed': (1, 4)
+            },
+            BeastRarity.RARE: {
+                'hp': (12, 22),
+                'attack': (4, 8),
+                'defense': (2, 5),
+                'speed': (2, 5)
+            },
+            BeastRarity.EPIC: {
+                'hp': (15, 28),
+                'attack': (5, 10),
+                'defense': (3, 7),
+                'speed': (3, 7)
+            },
+            BeastRarity.LEGENDARY: {
+                'hp': (20, 35),
+                'attack': (7, 14),
+                'defense': (4, 9),
+                'speed': (4, 9)
+            },
+            BeastRarity.MYTHIC: {
+                'hp': (25, 45),
+                'attack': (10, 18),
+                'defense': (6, 12),
+                'speed': (6, 12)
+            }
+        }
+        return stat_ranges[rarity]
+
+    def get_bonus_stat_ranges(
+            self, rarity: BeastRarity) -> Dict[str, Tuple[int, int]]:
+        """Get bonus stat ranges for every 5 levels"""
+        bonus_ranges = {
+            BeastRarity.COMMON: {
+                'hp': (5, 10),
+                'attack': (1, 3),
+                'defense': (1, 2),
+                'speed': (1, 2)
+            },
+            BeastRarity.UNCOMMON: {
+                'hp': (8, 15),
+                'attack': (2, 4),
+                'defense': (1, 3),
+                'speed': (1, 3)
+            },
+            BeastRarity.RARE: {
+                'hp': (12, 20),
+                'attack': (3, 6),
+                'defense': (2, 4),
+                'speed': (2, 4)
+            },
+            BeastRarity.EPIC: {
+                'hp': (15, 25),
+                'attack': (4, 8),
+                'defense': (3, 6),
+                'speed': (3, 6)
+            },
+            BeastRarity.LEGENDARY: {
+                'hp': (20, 35),
+                'attack': (6, 12),
+                'defense': (4, 8),
+                'speed': (4, 8)
+            },
+            BeastRarity.MYTHIC: {
+                'hp': (30, 50),
+                'attack': (8, 16),
+                'defense': (6, 12),
+                'speed': (6, 12)
+            }
+        }
+        return bonus_ranges[rarity]
+
+    def level_up(self,
+                 rarity: BeastRarity) -> Tuple[bool, bool, Dict[str, int]]:
+        """Level up the beast if enough experience"""
+        required_exp = self.get_level_up_requirements(rarity)
+        if self.exp < required_exp:
+            return False, False, {}
+
+        self.level += 1
+        self.exp -= required_exp
+
+        stat_ranges = self.get_stat_gains(rarity)
+        hp_gain = random.randint(*stat_ranges['hp'])
+        attack_gain = random.randint(*stat_ranges['attack'])
+        defense_gain = random.randint(*stat_ranges['defense'])
+        speed_gain = random.randint(*stat_ranges['speed'])
+
+        self.max_hp += hp_gain
+        self.hp = self.max_hp
+        self.attack += attack_gain
+        self.defense += defense_gain
+        self.speed += speed_gain
+
+        stat_gains = {
+            'hp': hp_gain,
+            'attack': attack_gain,
+            'defense': defense_gain,
+            'speed': speed_gain
+        }
+
+        bonus_level = self.level % 5 == 0
+        if bonus_level:
+            bonus_ranges = self.get_bonus_stat_ranges(rarity)
+            bonus_hp = random.randint(*bonus_ranges['hp'])
+            bonus_attack = random.randint(*bonus_ranges['attack'])
+            bonus_defense = random.randint(*bonus_ranges['defense'])
+            bonus_speed = random.randint(*bonus_ranges['speed'])
+
+            self.max_hp += bonus_hp
+            self.hp = self.max_hp
+            self.attack += bonus_attack
+            self.defense += bonus_defense
+            self.speed += bonus_speed
+
+            stat_gains.update({
+                'bonus_hp': bonus_hp,
+                'bonus_attack': bonus_attack,
+                'bonus_defense': bonus_defense,
+                'bonus_speed': bonus_speed
+            })
+
+        return True, bonus_level, stat_gains
+
+    def add_exp(
+            self, amount: int,
+            rarity: BeastRarity) -> List[Tuple[bool, bool, Dict[str, int]]]:
+        """Add experience and handle multiple level ups"""
+        self.exp += amount
+        level_ups = []
+
+        while True:
+            leveled_up, bonus_level, stat_gains = self.level_up(rarity)
+            if not leveled_up:
+                break
+            level_ups.append((leveled_up, bonus_level, stat_gains))
+            if len(level_ups) >= 10:
+                break
+
+        return level_ups
+
+    def get_total_exp_value(self, rarity: BeastRarity) -> int:
+        """Calculate total XP value of this beast for sacrifice"""
+        total_xp = self.exp
+        for level in range(1, self.level):
+            temp_stats = BeastStats(0, 0, 0, 0, 0, level, 0)
+            total_xp += temp_stats.get_level_up_requirements(rarity)
+        return total_xp
+
+    def heal(self, amount: int = None) -> int:
+        """Heal the beast, return amount healed"""
+        if amount is None:
+            amount = self.max_hp
+        old_hp = self.hp
+        self.hp = min(self.max_hp, self.hp + amount)
+        return self.hp - old_hp
