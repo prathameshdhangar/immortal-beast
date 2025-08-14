@@ -5705,35 +5705,32 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         f"{opponent_health_bar} `{opponent_hp_percent}%`\n" +
         f"`{opponent_final_hp:,}/{opponent_beast_obj.stats.max_hp:,} HP`",
         inline=False)
-    # XP Rewards Display Section (REPLACE ENTIRE BROKEN SECTION)
+    # XP Rewards Display Section
     if 'xp_info' in locals() and not xp_info.get('draw', False):
         # Winner/Loser XP display
         embed.add_field(
             name="⚡ **EXPERIENCE REWARDS**",
-            value=f"### 🏆 {xp_info['winner_user'].display_name}'s {xp_info['winner_beast'].name}\n" +
-                  f"```
-                  f"+ Victory XP: {xp_info['winner_xp']}\n" +
-                  f"+ New Level: {xp_info['winner_beast'].stats.level}\n" +
-                  f"```\n" +
-                  f"### 📚 {xp_info['loser_user'].display_name}'s {xp_info['loser_beast'].name}\n" +
-                  f"```
-                  f"Participation XP: {xp_info['loser_xp']}\n" +
-                  f"New Level: {xp_info['loser_beast'].stats.level}\n" +
-                  f"```",
-            inline=False)
-
+            value=(f"### 🏆 {xp_info['winner_user'].display_name}'s {xp_info['winner_beast'].name}\n" +
+                   f"```\n" +
+                   f"Victory XP: {xp_info['winner_xp']}\n" +
+                   f"New Level: {xp_info['winner_beast'].stats.level}\n" +
+                   f"```\n" +
+                   f"### 📚 {xp_info['loser_user'].display_name}'s {xp_info['loser_beast'].name}\n" +
+                   f"```\n" +
+                   f"Participation XP: {xp_info['loser_xp']}\n" +
+                   f"New Level: {xp_info['loser_beast'].stats.level}\n" +
+                   f"```"),
+            inline=False
+        )
 
         # Level up notifications
         level_up_messages = []
-
         if xp_info['winner_levelups']:
             level_count = len(xp_info['winner_levelups'])
             level_up_messages.append(f"🎆 **{xp_info['winner_beast'].name}** gained {level_count} level(s)!")
-
         if xp_info['loser_levelups']:
             level_count = len(xp_info['loser_levelups'])
             level_up_messages.append(f"📈 **{xp_info['loser_beast'].name}** gained {level_count} level(s)!")
-
         if level_up_messages:
             embed.add_field(
                 name="🎉 **LEVEL UP ACHIEVEMENTS**",
@@ -5745,11 +5742,11 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         # Draw XP display
         embed.add_field(
             name="⚡ **MUTUAL EXPERIENCE**",
-            value=f"```
-                  f"{ctx.author.display_name}: +{xp_info['challenger_xp']} XP\n" +
-                  f"{opponent.display_name}: +{xp_info['opponent_xp']} XP\n" +
-                  f"```\n" +
-                  f"🤝 **Both warriors grow stronger from this honorable clash!**",
+            value=(f"```
+                   f"{ctx.author.display_name}: +{xp_info['challenger_xp']} XP\n" +
+                   f"{opponent.display_name}: +{xp_info['opponent_xp']} XP\n" +
+                   f"```\n" +
+                   f"🤝 **Both warriors grow stronger from this honorable clash!**"),
             inline=False
         )
 
@@ -5759,13 +5756,14 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             draw_levelups.append(f"📈 {challenger_beast[1].name} gained {len(xp_info['challenger_levelups'])} level(s)!")
         if xp_info['opponent_levelups']:
             draw_levelups.append(f"📈 {opponent_beast[1].name} gained {len(xp_info['opponent_levelups'])} level(s)!")
-
         if draw_levelups:
             embed.add_field(
                 name="🎉 **LEVEL BREAKTHROUGHS**",
                 value="\n".join(draw_levelups),
                 inline=False
             )
+
+
     # Dynamic rewards section
     if winner_user:
         embed.add_field(name="🎁 **SPOILS OF WAR**",
