@@ -1,0 +1,171 @@
+SyntaxError: Expected an indented block after function definition
+(pyright-extended)
+Ln 2180, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2180, Col 5
+"guild_id" is not defined
+(pyright-extended)
+Ln 2183, Col 8
+SyntaxError: Expected an indented block after `if` statement
+(pyright-extended)
+Ln 2184, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2184, Col 5
+Try statement must have at least one except or finally clause
+(pyright-extended)
+Ln 2184, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2185, Col 5
+SyntaxError: Expected an indented block after `try` statement
+(pyright-extended)
+Ln 2185, Col 5
+"await" allowed only within async function
+(pyright-extended)
+Ln 2185, Col 26
+"self" is not defined
+(pyright-extended)
+Ln 2185, Col 32
+"guild_id" is not defined
+(pyright-extended)
+Ln 2186, Col 5
+Expected expression
+(pyright-extended)
+Ln 2188, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2188, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2188, Col 22
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 2188, Col 27
+"self" is not defined
+(pyright-extended)
+Ln 2189, Col 5
+"guild_id" is not defined
+(pyright-extended)
+Ln 2190, Col 45
+"e" is not defined
+(pyright-extended)
+Ln 2190, Col 57
+"self" is not defined
+(pyright-extended)
+Ln 2191, Col 20
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2192, Col 5
+Expected expression
+(pyright-extended)
+Ln 2192, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2192, Col 9
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2192, Col 10
+"self" is not defined
+(pyright-extended)
+Ln 2193, Col 20
+SyntaxError: Expected an indented block after `for` statement
+(pyright-extended)
+Ln 2196, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2196, Col 5
+Try statement must have at least one except or finally clause
+(pyright-extended)
+Ln 2196, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2198, Col 5
+SyntaxError: Expected an indented block after `try` statement
+(pyright-extended)
+Ln 2198, Col 5
+"await" allowed only within async function
+(pyright-extended)
+Ln 2198, Col 17
+SyntaxError: Expected an indented block after `if` statement
+(pyright-extended)
+Ln 2200, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2200, Col 5
+"self" is not defined
+(pyright-extended)
+Ln 2200, Col 5
+"guild_id" is not defined
+(pyright-extended)
+Ln 2201, Col 29
+"await" allowed only within async function
+(pyright-extended)
+Ln 2203, Col 14
+"api_func" is not defined
+(pyright-extended)
+Ln 2203, Col 20
+"args" is not defined
+(pyright-extended)
+Ln 2203, Col 30
+"kwargs" is not defined
+(pyright-extended)
+Ln 2203, Col 38
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2206, Col 5
+Expected expression
+(pyright-extended)
+Ln 2206, Col 5
+Code is unreachable
+(pyright-extended)
+Ln 2206, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2206, Col 22
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 2206, Col 27
+SyntaxError: Expected an indented block after `if` statement
+(pyright-extended)
+Ln 2209, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2209, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2213, Col 5
+Expected expression
+(pyright-extended)
+Ln 2213, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2213, Col 9
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2213, Col 10
+SyntaxError: Expected an indented block after `if` statement
+(pyright-extended)
+Ln 2216, Col 5
+Expected indented block
+(pyright-extended)
+Ln 2216, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2217, Col 5
+Expected expression
+(pyright-extended)
+Ln 2217, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2217, Col 9
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 2217, Col 10
+"break" can be used only within a loop
+(pyright-extended)
+Ln 2218, Col 5
+Code is unreachable
+(pyright-extended)
+Ln 2683, Col 1
