@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
 import sqlite3
+import time
 import functools
 import discord
 from discord.ext import commands, tasks
@@ -2259,6 +2260,10 @@ class ImmortalBeastsBot(commands.Bot):
             else:
                 self.logger.info(
                     "No cloud backup found, starting with fresh database")
+
+        startup_delay = random.uniform(5, 15)  # Random delay 5-15 seconds
+        self.logger.info(f"Waiting {startup_delay:.1f}s before initializing...")
+        await asyncio.sleep(startup_delay)
 
         await self.db.initialize()
         self.logger.info("Database initialized")
@@ -6644,6 +6649,7 @@ def main():
 
     bot = ImmortalBeastsBot(config)
 
+    # Add all commands
     bot.add_command(catch_beast)
     bot.add_command(daily_stone_reward)
     bot.add_command(adopt_beast)
@@ -6683,13 +6689,24 @@ def main():
     bot.add_command(remove_xp_channel)
     bot.add_command(configure_antispam)
 
-    try:
-        bot.run(config.token)
-    except discord.LoginFailure:
-        print("Invalid bot token. Please check your configuration.")
-    except Exception as e:
-        print(f"Error running bot: {e}")
-
+    # RETRY LOGIC INSIDE THE FUNCTION WHERE VARIABLES ARE AVAILABLE
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            print(f"Starting bot (attempt {attempt + 1}/{max_retries})...")
+            bot.run(config.token)
+            break  # Success, exit retry loop
+        except discord.LoginFailure:
+            print("Invalid bot token. Please check your configuration.")
+            break  # Don't retry for invalid token
+        except Exception as e:
+            print(f"Error running bot (attempt {attempt + 1}): {e}")
+            if attempt < max_retries - 1:
+                wait_time = 60 * (attempt + 1)  # 60, 120, 180 seconds
+                print(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print("Max retries exceeded. Bot failed to start.")
 
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
