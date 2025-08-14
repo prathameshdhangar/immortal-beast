@@ -3,9 +3,9 @@ A comprehensive Discord bot for beast collection, battles, and trading.
 """
 
 import asyncio
-import datetime 
+import datetime
 import json
-import logging 
+import logging
 import os
 import random
 import shutil
@@ -24,8 +24,9 @@ import threading
 from flask import Flask
 import base64
 import aiohttp
-from rate_limiter import RateLimiter
-
+from utils.guild_rate_manager import GuildRateLimitManager
+from utils.rate_limiter import RateLimiter
+from cogs.rate_limit_config import RateLimitConfig
 
 # Configuration Management
 class BotConfig(BaseModel):
@@ -120,6 +121,13 @@ class BotConfig(BaseModel):
         default=60, description="Not used in message-only system")
     user_activity_timeout_minutes: int = Field(default=5,
                                                description="Not used for XP")
+
+    # XP Anti-Spam Settings
+    min_message_length: int = Field(default=5, description="Minimum message length for XP")
+    max_similar_messages: int = Field(default=2, description="Max similar messages before spam detection")
+    message_frequency_limit: int = Field(default=6, description="Max messages per 2 minutes for XP")
+    xp_spam_cooldown_minutes: int = Field(default=5, description="Cooldown after spam detection")
+
 
     # Starting resources
     starting_beast_stones: int = Field(
@@ -323,6 +331,58 @@ class UserRole(Enum):
     SPECIAL = "special"
     PERSONAL = "personal"
 
+# Move this OUTSIDE the BeastStats class, around line 400-500 (after BeastStats class definition)
+def calculate_enhanced_battle_xp(winner_beast, loser_beast, battle_turns, is_winner=True):
+    """Enhanced XP calculation considering rarity and other factors"""
+
+    # Base XP scales with opponent's rarity
+    rarity_multipliers = {
+        BeastRarity.COMMON: 1.0,
+        BeastRarity.UNCOMMON: 1.2,
+        BeastRarity.RARE: 1.4,
+        BeastRarity.EPIC: 1.6,
+        BeastRarity.LEGENDARY: 1.8,
+        BeastRarity.MYTHIC: 2.0
+    }
+
+    opponent_rarity = loser_beast.rarity if is_winner else winner_beast.rarity
+    base_xp = int(40 * rarity_multipliers[opponent_rarity])
+
+    if is_winner:
+        victory_bonus = 20
+
+        # David vs Goliath bonus (defeating higher rarity)
+        if loser_beast.rarity.value > winner_beast.rarity.value:
+            underdog_bonus = (loser_beast.rarity.value - winner_beast.rarity.value) * 15
+        else:
+            underdog_bonus = 0
+
+        # Level difference bonus
+        level_diff = max(0, loser_beast.stats.level - winner_beast.stats.level)
+        level_bonus = level_diff * 3
+
+        # Battle intensity bonus
+        intensity_bonus = min(battle_turns * 1, 15)
+
+        total_xp = base_xp + victory_bonus + underdog_bonus + level_bonus + intensity_bonus
+
+    else:
+        # Loser rewards
+        participation_xp = base_xp // 3
+
+        # Bonus for lasting against stronger opponent
+        if winner_beast.rarity.value > loser_beast.rarity.value:
+            survival_bonus = (winner_beast.rarity.value - loser_beast.rarity.value) * 8
+        else:
+            survival_bonus = 0
+
+        # Small level difference consolation
+        level_diff = max(0, winner_beast.stats.level - loser_beast.stats.level)
+        level_consolation = level_diff * 1
+
+        total_xp = participation_xp + survival_bonus + level_consolation
+
+    return min(total_xp, 150)  # Higher cap for enhanced system
 
 # Data Models
 @dataclass
@@ -519,8 +579,7 @@ class BeastStats:
         old_hp = self.hp
         self.hp = min(self.max_hp, self.hp + amount)
         return self.hp - old_hp
-
-
+        
 # ✅ FIXED: Beast class moved to module level (NOT nested in BeastTemplate)
 @dataclass
 class Beast:
@@ -2042,10 +2101,10 @@ async def select_beast_for_battle(
             f"Level {beast.stats.level} | HP: {beast.stats.hp}/{beast.stats.max_hp} | Power: {beast.power_level}",
             inline=False)
 
-    message = await ctx.send(embed=embed)
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     for i in range(len(options)):
-        await message.add_reaction(number_emojis[i])
+        await ctx.bot.safe_add_reaction(message, number_emojis[i])
 
     def check(reaction, react_user):
         return (react_user == user
@@ -2088,6 +2147,7 @@ class ImmortalBeastsBot(commands.Bot):
         self.current_spawned_beast: Optional[Beast] = None
         self.catch_attempts: Dict[int, int] = {}  # user_id -> attempt_count
         self.max_catch_attempts = 3
+        self.guild_rate_manager = GuildRateLimitManager()
 
         # Setup logging
         logging.basicConfig(
@@ -2097,29 +2157,62 @@ class ImmortalBeastsBot(commands.Bot):
                       logging.StreamHandler()])
         self.logger = logging.getLogger(__name__)
 
-    async def safe_api_call(self, api_func, *args, **kwargs):
-        """Utility for safe API requests with backoff on 429"""
-        for attempt in range(5):
-            if not self.api_rate_limiter.can_call():
-                self.logger.warning(
-                    "Hit API rate limit, backing off before API call...")
-                await asyncio.sleep(self.config.api_retry_backoff_seconds)
+    async def safe_api_call(self, api_func, guild_id: Optional[int] = None, *args, **kwargs):
+        """Enhanced safe API call with guild-specific rate limiting"""
+
+        # Use guild-specific rate limiter if guild_id is provided
+        if guild_id:
             try:
-                result = await api_func(*args, **kwargs)
-                self.api_rate_limiter.record_call()
-                return result
+                guild_rate_limiter = await self.guild_rate_manager.get_api_rate_limiter(guild_id)
+                rate_limiter = guild_rate_limiter
             except Exception as e:
-                # ✅ FIXED: Safe attribute checking for status
+                self.logger.warning(f"Failed to get guild rate limiter for {guild_id}: {e}")
+                rate_limiter = self.api_rate_limiter  # Fallback to global
+        else:
+            # Fall back to global rate limiter
+            rate_limiter = self.api_rate_limiter
+
+        for attempt in range(5):
+            try:
+                wait_time = await rate_limiter.wait_if_needed()
+                if wait_time:
+                    self.logger.info(f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s")
+
+                result = await api_func(*args, **kwargs)
+                return result
+
+            except Exception as e:
                 if hasattr(e, "status") and getattr(e, "status", None) == 429:
                     wait = self.config.api_retry_backoff_seconds * (2**attempt)
-                    self.logger.warning(
-                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})"
-                    )
+                    self.logger.warning(f"429 error, backing off for {wait} seconds (attempt {attempt+1})")
                     await asyncio.sleep(wait)
                 else:
                     self.logger.error(f"API call failed: {e}")
+                    break
+
         self.logger.error("Max retries exceeded for API call")
         return None
+
+    async def safe_send_message(self, channel, *args, **kwargs):
+        """Send message with rate limiting"""
+        guild_id = getattr(channel, 'guild', None)
+        guild_id = guild_id.id if guild_id else None
+
+        return await self.safe_api_call(channel.send, guild_id, *args, **kwargs)
+
+    async def safe_add_reaction(self, message, emoji):
+        """Add reaction with rate limiting"""
+        guild_id = getattr(message, 'guild', None)
+        guild_id = guild_id.id if guild_id else None
+
+        return await self.safe_api_call(message.add_reaction, guild_id, emoji)
+
+    async def safe_edit_message(self, message, *args, **kwargs):
+        """Edit message with rate limiting"""
+        guild_id = getattr(message, 'guild', None)
+        guild_id = guild_id.id if guild_id else None
+
+        return await self.safe_api_call(message.edit, guild_id, *args, **kwargs)
 
     async def setup_hook(self):
         """Enhanced setup with automatic restoration - MESSAGE XP ONLY"""
@@ -2137,6 +2230,9 @@ class ImmortalBeastsBot(commands.Bot):
 
         await self.db.initialize()
         self.logger.info("Database initialized")
+
+        await self.add_cog(RateLimitConfig(self, self.guild_rate_manager))
+        self.logger.info("Rate limiting cog loaded")
 
         # Update backup task interval based on config
         self.enhanced_backup_task.change_interval(
@@ -2188,16 +2284,19 @@ class ImmortalBeastsBot(commands.Bot):
         await self.process_commands(message)
 
     async def handle_message_xp_gain(self, message):
-        """Handle XP gain from messages with role bonuses"""
+        """Handle XP gain from messages with anti-spam protection"""
         try:
-            user = await self.get_or_create_user(message.author.id,
-                                                 str(message.author))
+            user = await self.get_or_create_user(message.author.id, str(message.author))
 
             # Check cooldown (now 60 seconds)
             if not user.can_gain_xp(self.config.xp_cooldown_seconds):
                 return
 
             if not user.active_beast_id:
+                return
+
+            # ✅ NEW: Enhanced anti-spam validation
+            if not self._is_valid_xp_message(message):
                 return
 
             # Get active beast
@@ -2211,40 +2310,30 @@ class ImmortalBeastsBot(commands.Bot):
                     active_beast_id = beast_id
                     break
 
-            if not active_beast:
+            if not active_beast or active_beast_id is None:
                 return
 
-            if active_beast_id is None:
-                self.logger.error("Active beast found but beast_id is None")
-                return
-
-            # ✅ NEW: Calculate role-based XP amount with bonuses!
+            # Calculate role-based XP amount with bonuses
             xp_amount = get_user_message_xp_amount(message.author, self.config)
 
             # Add XP and check for level ups
-            level_ups = active_beast.stats.add_exp(xp_amount,
-                                                   active_beast.rarity)
+            level_ups = active_beast.stats.add_exp(xp_amount, active_beast.rarity)
 
             # Update database
             user.last_xp_gain = datetime.datetime.now()
             await self.db.update_user(user)
             await self.db.update_beast(active_beast_id, active_beast)
 
-            # Send level up notification with correct XP amount
+            # Send level up notification (only for level ups, not every XP gain)
             if level_ups:
                 for leveled_up, bonus_level, stat_gains in level_ups:
                     embed = discord.Embed(
                         title="🎉 Level Up!",
-                        description=
-                        f"{message.author.mention}'s **{active_beast.name}** leveled up!",
+                        description=f"{message.author.mention}'s **{active_beast.name}** leveled up!",
                         color=active_beast.rarity.color)
 
-                    embed.add_field(name="New Level",
-                                    value=f"Level {active_beast.stats.level}",
-                                    inline=True)
-                    embed.add_field(name="Power Level",
-                                    value=active_beast.power_level,
-                                    inline=True)
+                    embed.add_field(name="New Level", value=f"Level {active_beast.stats.level}", inline=True)
+                    embed.add_field(name="Power Level", value=active_beast.power_level, inline=True)
 
                     # Regular stat gains
                     gain_text = []
@@ -2252,9 +2341,7 @@ class ImmortalBeastsBot(commands.Bot):
                         if not stat.startswith('bonus_'):
                             gain_text.append(f"{stat.title()}: +{gain}")
 
-                    embed.add_field(name="Stat Gains",
-                                    value="\n".join(gain_text),
-                                    inline=False)
+                    embed.add_field(name="Stat Gains", value="\n".join(gain_text), inline=False)
 
                     # Bonus stats for level 5 multiples
                     if bonus_level:
@@ -2262,20 +2349,135 @@ class ImmortalBeastsBot(commands.Bot):
                         for stat, gain in stat_gains.items():
                             if stat.startswith('bonus_'):
                                 clean_stat = stat.replace('bonus_', '')
-                                bonus_text.append(
-                                    f"{clean_stat.title()}: +{gain}")
+                                bonus_text.append(f"{clean_stat.title()}: +{gain}")
 
                         embed.add_field(
                             name="🌟 Bonus Stats (Level 5 Multiple)!",
                             value="\n".join(bonus_text),
                             inline=False)
 
-                    # ✅ Show actual XP amount with role bonuses
                     embed.set_footer(text=f"Message XP: +{xp_amount}")
                     await message.channel.send(embed=embed)
 
         except Exception as e:
             self.logger.error(f"Error in handle_message_xp_gain: {e}")
+
+    def _is_valid_xp_message(self, message) -> bool:
+        """Comprehensive anti-spam validation for XP messages"""
+        content = message.content.strip()
+
+        # Basic length check (minimum 5 characters)
+        if len(content) < 5:
+            return False
+
+        # Check for spam patterns
+        if self._is_spam_pattern(content):
+            return False
+
+        # Check for repetitive content
+        if self._is_repetitive_content(message.author.id, content):
+            return False
+
+        # Check message frequency (additional rate limiting)
+        if self._is_message_spam(message.author.id):
+            return False
+
+        return True
+
+    def _is_spam_pattern(self, content: str) -> bool:
+        """Detect common spam patterns"""
+        content_lower = content.lower()
+
+        # Single character repeated
+        if len(set(content.replace(' ', ''))) <= 2 and len(content) > 10:
+            return True
+
+        # Common spam phrases
+        spam_phrases = [
+            'xp', 'exp', 'experience', 'level up', 'lvl', 'farm'
+        ]
+
+        # If message is just spam phrases
+        words = content_lower.split()
+        if len(words) <= 3 and any(phrase in content_lower for phrase in spam_phrases):
+            return True
+
+        # Excessive punctuation or caps
+        punct_ratio = sum(1 for c in content if c in '!@#$%^&*().,?;:') / len(content)
+        if punct_ratio > 0.3:
+            return True
+
+        caps_ratio = sum(1 for c in content if c.isupper()) / len(content)
+        if caps_ratio > 0.7 and len(content) > 10:
+            return True
+
+        return False
+
+    def _is_repetitive_content(self, user_id: int, content: str) -> bool:
+        """Check if user is repeating the same content"""
+        if not hasattr(self, '_user_message_history'):
+            self._user_message_history = {}
+
+        if user_id not in self._user_message_history:
+            self._user_message_history[user_id] = []
+
+        user_history = self._user_message_history[user_id]
+
+        # Keep only last 5 messages
+        if len(user_history) >= 5:
+            user_history.pop(0)
+
+        # Check similarity with recent messages
+        similar_count = 0
+        for old_msg in user_history:
+            similarity = self._calculate_similarity(content.lower(), old_msg.lower())
+            if similarity > 0.8:  # 80% similar
+                similar_count += 1
+
+        # Add current message to history
+        user_history.append(content)
+
+        # If 3+ similar messages in recent history, it's spam
+        return similar_count >= 2
+
+    def _calculate_similarity(self, str1: str, str2: str) -> float:
+        """Calculate similarity between two strings"""
+        if len(str1) == 0 and len(str2) == 0:
+            return 1.0
+        if len(str1) == 0 or len(str2) == 0:
+            return 0.0
+
+        # Simple character-based similarity
+        set1, set2 = set(str1), set(str2)
+        intersection = len(set1.intersection(set2))
+        union = len(set1.union(set2))
+
+        return intersection / union if union > 0 else 0.0
+
+    def _is_message_spam(self, user_id: int) -> bool:
+        """Check if user is sending messages too frequently"""
+        if not hasattr(self, '_user_message_timestamps'):
+            self._user_message_timestamps = {}
+
+        now = datetime.datetime.now()
+
+        if user_id not in self._user_message_timestamps:
+            self._user_message_timestamps[user_id] = []
+
+        timestamps = self._user_message_timestamps[user_id]
+
+        # Remove timestamps older than 2 minutes
+        timestamps[:] = [ts for ts in timestamps if (now - ts).total_seconds() < 120]
+
+        # If more than 6 messages in 2 minutes, it's spam
+        if len(timestamps) >= 6:
+            return True
+
+        # Add current timestamp
+        timestamps.append(now)
+
+        return False
+
 
     async def on_command_error(self, ctx, error):
         """Global error handler"""
@@ -2287,14 +2489,14 @@ class ImmortalBeastsBot(commands.Bot):
                 title="❌ Missing Permissions",
                 description="You don't have permission to use this command.",
                 color=0xFF0000)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
         self.logger.error(f"Command error in {ctx.command}: {error}")
         embed = discord.Embed(
             title="❌ Error",
             description="An error occurred while processing your command.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     async def get_or_create_user(self, user_id: int, username: str) -> User:
         """Get user or create if doesn't exist"""
@@ -2456,7 +2658,7 @@ def require_channel(channel_type: str):
                         description=
                         "This command can only be used in designated battle channels!",
                         color=0xFF0000)
-                    await ctx.send(embed=embed)
+                    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
                     return
 
             elif channel_type == "adopt":
@@ -2466,7 +2668,7 @@ def require_channel(channel_type: str):
                         description=
                         "This command can only be used in the adoption channel!",
                         color=0xFF0000)
-                    await ctx.send(embed=embed)
+                    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
                     return
 
             elif channel_type == "spawn":
@@ -2476,7 +2678,7 @@ def require_channel(channel_type: str):
                         description=
                         "This command can only be used in the beast spawn channel!",
                         color=0xFF0000)
-                    await ctx.send(embed=embed)
+                    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
                     return
 
             return await func(ctx, *args, **kwargs)
@@ -2507,7 +2709,7 @@ async def daily_stone_reward(ctx):
                 description=
                 f"You can claim your next daily beast stones in {hours}h {minutes}m",
                 color=0xFF8000)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
     daily_reward = 100
@@ -2533,7 +2735,7 @@ async def daily_stone_reward(ctx):
         inline=False)
 
     embed.set_footer(text="Come back tomorrow for another 100 beast stones!")
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # SPAWN MANAGEMENT COMMANDS - ADD THESE TO YOUR COMMANDS SECTION
@@ -2548,7 +2750,7 @@ async def force_spawn(ctx):
             title="❌ Not the Spawn Channel",
             description="This is not the designated beast spawn channel.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if there's already a beast spawned
@@ -2558,7 +2760,7 @@ async def force_spawn(ctx):
             description=
             f"There's already a {ctx.bot.current_spawned_beast.name} waiting to be caught!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     try:
@@ -2567,12 +2769,12 @@ async def force_spawn(ctx):
             title="✅ Beast Force Spawned",
             description="A wild beast has been manually spawned!",
             color=0x00FF00)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
     except Exception as e:
         embed = discord.Embed(title="❌ Spawn Failed",
                               description=f"Failed to spawn beast: {str(e)}",
                               color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='spawninfo')
@@ -2654,7 +2856,7 @@ async def spawn_info(ctx):
                         value="None",
                         inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='sacrifice', aliases=['sac'])
@@ -2696,7 +2898,7 @@ async def sacrifice_beast(ctx, beast_id: int):
         embed.set_footer(
             text="⚡ IMMORTAL BEAST SHRINE • Double-check your beast ID!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if trying to sacrifice active beast
@@ -2727,7 +2929,7 @@ async def sacrifice_beast(ctx, beast_id: int):
             "⚡ IMMORTAL BEAST SHRINE • Your active beast cannot be sacrificed!"
         )
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Calculate sacrifice value
@@ -2845,9 +3047,9 @@ async def sacrifice_beast(ctx, beast_id: int):
                          ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
 
-    message = await ctx.send(embed=embed)
-    await message.add_reaction("✅")
-    await message.add_reaction("❌")
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+    await ctx.bot.safe_add_reaction(message, "✅")
+    await ctx.bot.safe_add_reaction(message, "❌")
 
     def check(reaction, react_user):
         return (react_user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
@@ -2876,7 +3078,7 @@ async def sacrifice_beast(ctx, beast_id: int):
                                 "- Please try again\n"
                                 "```",
                                 inline=False)
-                await message.edit(embed=embed)
+                await ctx.bot.safe_edit_message(message, embed=embed)
                 return
 
             # Give beast stones
@@ -3046,7 +3248,7 @@ async def sacrifice_beast(ctx, beast_id: int):
                          ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
 
-    await message.edit(embed=embed)
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
 
 @commands.command(name='release', aliases=['free'])
@@ -3076,7 +3278,7 @@ async def release_beast(ctx, beast_id: int):
                         f"- Result: NOT IN COLLECTION\n"
                         f"```",
                         inline=False)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if trying to release active beast
@@ -3095,7 +3297,7 @@ async def release_beast(ctx, beast_id: int):
                         f"```\n"
                         f"🛡️ **Your active companion cannot be released!**",
                         inline=False)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Cool Release Confirmation
@@ -3171,9 +3373,9 @@ async def release_beast(ctx, beast_id: int):
                          ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
 
-    message = await ctx.send(embed=embed)
-    await message.add_reaction("✅")
-    await message.add_reaction("❌")
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+    await ctx.bot.safe_add_reaction(message, "✅")
+    await ctx.bot.safe_add_reaction(message, "❌")
 
     def check(reaction, react_user):
         return (react_user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
@@ -3269,7 +3471,7 @@ async def release_beast(ctx, beast_id: int):
                          ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
 
-    await message.edit(embed=embed)
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
     # ADD THIS POWERFUL DEBUGGING COMMAND:
 
@@ -3290,7 +3492,7 @@ async def release_beast(ctx, beast_id: int):
                     description=
                     "This command can only be used in text channels.",
                     color=0xFF0000)
-                await ctx.send(embed=embed)
+                await ctx.bot.safe_send_message(ctx.channel, embed=embed)
                 return
 
         if channel.id in ctx.bot.config.xp_chat_channel_ids:
@@ -3311,7 +3513,7 @@ async def release_beast(ctx, beast_id: int):
                 "This change is temporary. Update environment variables for permanent change.",
                 inline=False)
 
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # ADD THESE COMMANDS if you don't have them:
@@ -3402,16 +3604,13 @@ async def xp_config(ctx):
                     "• Bot permissions in XP channels",
                     inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='xpstatus', aliases=['xpcheck'])
-async def xp_status(ctx):  # ✅ Added missing 'self' parameter
-    """Check your XP gain status and settings"""
+async def xp_status(ctx):
+    """Check your XP gain status and anti-spam information"""
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
-
-    # ✅ FIXED: Initialize cooldown_remaining at the start
-    cooldown_remaining = 0
 
     embed = discord.Embed(
         title="⚡ XP System Status",
@@ -3422,8 +3621,7 @@ async def xp_status(ctx):  # ✅ Added missing 'self' parameter
     current_channel_valid = ctx.channel.id in ctx.bot.config.xp_chat_channel_ids
     embed.add_field(
         name="📍 Current Channel",
-        value=f"**{ctx.channel.name}**\n"
-        f"XP Enabled: {'✅ Yes' if current_channel_valid else '❌ No'}",
+        value=f"**{ctx.channel.name}**\nXP Enabled: {'✅ Yes' if current_channel_valid else '❌ No'}",
         inline=True)
 
     # Active beast check
@@ -3438,14 +3636,12 @@ async def xp_status(ctx):  # ✅ Added missing 'self' parameter
         if active_beast:
             embed.add_field(
                 name="🐉 Active Beast",
-                value=f"**{active_beast.name}** {active_beast.rarity.emoji}\n"
-                f"Level {active_beast.stats.level} | ID: #{user.active_beast_id}",
+                value=f"**{active_beast.name}** {active_beast.rarity.emoji}\nLevel {active_beast.stats.level} | ID: #{user.active_beast_id}",
                 inline=True)
         else:
             embed.add_field(
                 name="🐉 Active Beast",
-                value=
-                "❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
+                value="❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
                 inline=True)
     else:
         embed.add_field(
@@ -3454,83 +3650,70 @@ async def xp_status(ctx):  # ✅ Added missing 'self' parameter
             inline=True)
 
     # Cooldown check
+    cooldown_remaining = 0
     if user.last_xp_gain:
         time_since_last = datetime.datetime.now() - user.last_xp_gain
-        cooldown_remaining = max(
-            0, ctx.bot.config.xp_cooldown_seconds -
-            time_since_last.total_seconds())  # ✅ Now properly assigned
+        cooldown_remaining = max(0, ctx.bot.config.xp_cooldown_seconds - time_since_last.total_seconds())
 
         if cooldown_remaining > 0:
             embed.add_field(
                 name="⏰ XP Cooldown",
-                value=
-                f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
+                value=f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
                 inline=False)
         else:
-            embed.add_field(name="⏰ XP Cooldown",
-                            value="✅ **Ready to gain XP**\nNo cooldown active",
-                            inline=False)
+            embed.add_field(
+                name="⏰ XP Cooldown",
+                value="✅ **Ready to gain XP**\nNo cooldown active",
+                inline=False)
     else:
-        embed.add_field(name="⏰ XP Cooldown",
-                        value="✅ **Ready to gain XP**\nFirst time gaining XP",
-                        inline=False)
+        embed.add_field(
+            name="⏰ XP Cooldown",
+            value="✅ **Ready to gain XP**\nFirst time gaining XP",
+            inline=False)
+
+    # Anti-spam information
+    embed.add_field(
+        name="🛡️ Anti-Spam Rules",
+        value=f"**Minimum Length:** {ctx.bot.config.min_message_length} characters\n"
+              f"**No Repetitive Messages:** Max {ctx.bot.config.max_similar_messages} similar\n"
+              f"**Rate Limit:** Max {ctx.bot.config.message_frequency_limit} messages/2min\n"
+              f"**No Spam Patterns:** caps, symbols, farming words",
+        inline=False)
 
     # XP settings
     embed.add_field(
         name="⚙️ XP Settings",
         value=f"**XP per Message:** {ctx.bot.config.xp_per_message}\n"
-        f"**Cooldown:** {ctx.bot.config.xp_cooldown_seconds}s\n"
-        f"**Message Length:** Must be >3 characters",
+              f"**Cooldown:** {ctx.bot.config.xp_cooldown_seconds}s\n"
+              f"**Role Bonuses:** Special +30%, Personal +60%",
         inline=True)
 
-    # Valid XP channels (show first few)
-    xp_channels = []
-    for channel_id in ctx.bot.config.xp_chat_channel_ids[:3]:
-        channel = ctx.bot.get_channel(channel_id)
-        if channel:
-            xp_channels.append(f"#{channel.name}")
-        else:
-            xp_channels.append(f"Unknown ({channel_id})")
-
-    channel_text = "\n".join(xp_channels)
-    if len(ctx.bot.config.xp_chat_channel_ids) > 3:
-        channel_text += f"\n... and {len(ctx.bot.config.xp_chat_channel_ids) - 3} more"
-
-    embed.add_field(name="📺 XP Channels",
-                    value=channel_text if xp_channels else "None configured",
-                    inline=True)
-
-    # Recommendations - now cooldown_remaining is always defined
+    # Recommendations
     recommendations = []
     if not user.active_beast_id:
-        recommendations.append(
-            f"🎯 Use `{ctx.bot.config.prefix}active <beast_id>` to set active beast"
-        )
+        recommendations.append(f"🎯 Use `{ctx.bot.config.prefix}active <beast_id>` to set active beast")
     if not current_channel_valid:
         recommendations.append("📍 Move to an XP-enabled channel")
-    if user.last_xp_gain and cooldown_remaining > 0:  # ✅ Now safe to use!
-        recommendations.append(
-            f"⏰ Wait {int(cooldown_remaining)}s for cooldown")
+    if cooldown_remaining > 0:
+        recommendations.append(f"⏰ Wait {int(cooldown_remaining)}s for cooldown")
+
+    recommendations.append("💬 **Write meaningful messages** - avoid spam!")
+    recommendations.append("📝 **Minimum 5 characters** per message")
+    recommendations.append("🚫 **Avoid repetitive content** or farming phrases")
 
     if recommendations:
-        embed.add_field(name="💡 Recommendations",
-                        value="\n".join(recommendations),
-                        inline=False)
-    else:
         embed.add_field(
-            name="✅ Status",
-            value="Everything looks good! Start chatting to gain XP!",
+            name="💡 Recommendations",
+            value="\n".join(recommendations),
             inline=False)
 
-    await ctx.send(embed=embed)
-
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 @commands.command(name='removexp')
 @commands.has_permissions(administrator=True)
-async def remove_xp_channel(
-                            ctx,
-                            channel: Optional[discord.TextChannel] = None
-                            ):  # ✅ Fixed
+async def remove_xp_channel(ctx,
+                            channel: Optional[
+                                discord.TextChannel] = None):  # ✅ Fixed
     """Remove a channel from XP gain list (admin only)"""
     if channel is None:
         channel = ctx.channel
@@ -3540,7 +3723,7 @@ async def remove_xp_channel(
                 title="❌ Invalid Channel",
                 description="This command can only be used in text channels.",
                 color=0xFF0000)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
     if channel.id in ctx.bot.config.xp_chat_channel_ids:
@@ -3555,7 +3738,7 @@ async def remove_xp_channel(
             description=f"{channel.mention} is not in the XP channel list",
             color=0xFFAA00)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # REPLACE the existing fixcooldown command with this enhanced version:
@@ -3563,8 +3746,7 @@ async def remove_xp_channel(
 
 @commands.command(name='fixcooldown', aliases=['setcooldown'])
 @commands.has_permissions(administrator=True)
-async def fix_xp_cooldown(ctx,
-                          new_cooldown: Optional[int] = None):  # ✅ Fixed
+async def fix_xp_cooldown(ctx, new_cooldown: Optional[int] = None):  # ✅ Fixed
     """Temporarily adjust XP cooldown (admin only)"""
 
     # If no cooldown provided, show current setting
@@ -3582,7 +3764,7 @@ async def fix_xp_cooldown(ctx,
         embed.add_field(name="Valid Range",
                         value="0 to 300 seconds",
                         inline=True)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Validate cooldown range
@@ -3597,7 +3779,7 @@ async def fix_xp_cooldown(ctx,
             value=
             "• `!fixcooldown 5` - Very fast XP gain\n• `!fixcooldown 15` - Balanced XP gain\n• `!fixcooldown 60` - Slow XP gain",
             inline=False)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     try:
@@ -3632,7 +3814,7 @@ async def fix_xp_cooldown(ctx,
             f"• Use `{ctx.bot.config.prefix}xpstatus` to check XP status\n• Have users chat in XP channels to test\n• Look for ⚡ reactions on messages",
             inline=False)
 
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
         # Log the change
         print(
@@ -3650,7 +3832,7 @@ async def fix_xp_cooldown(ctx,
             value=
             f"Old cooldown: {getattr(ctx.bot.config, 'xp_cooldown_seconds', 'Unknown')}\nNew cooldown: {new_cooldown}",
             inline=False)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # ALSO ADD this simple command to check current settings:
@@ -3699,7 +3881,7 @@ async def check_cooldown(ctx):
             description=f"Could not retrieve cooldown setting: {str(e)}",
             color=0xFF0000)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # ADD this command to test if commands are working:
@@ -3715,7 +3897,7 @@ async def ping_command(ctx):
                           description="Bot is responding normally",
                           color=0x00FF00)
 
-    message = await ctx.send(embed=embed)
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     end_time = time.time()
     response_time = (end_time - start_time) * 1000
@@ -3728,7 +3910,7 @@ async def ping_command(ctx):
                     value=f"{ctx.bot.latency * 1000:.0f}ms",
                     inline=True)
 
-    await message.edit(embed=embed)
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
 
 @commands.command(name='nextspawn')
@@ -3740,7 +3922,7 @@ async def next_spawn_time(ctx):
             description=
             "Spawn timing not initialized yet. Please wait a moment.",
             color=0xFFAA00)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     time_until_spawn = ctx.bot._next_spawn_time - datetime.datetime.now()
@@ -3784,7 +3966,7 @@ async def next_spawn_time(ctx):
             value=f"{beast.name} {beast.rarity.emoji} - Go catch it!",
             inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='cloudbackup')
@@ -3795,7 +3977,7 @@ async def manual_cloud_backup(ctx):
         title="☁️ Creating Cloud Backup...",
         description="Creating backup and uploading to cloud storage.",
         color=0xFFAA00)
-    message = await ctx.send(embed=embed)
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     try:
         backup_file = await ctx.bot.safe_api_call(
@@ -3827,7 +4009,7 @@ async def manual_cloud_backup(ctx):
                               description=f"An error occurred: {str(e)}",
                               color=0xFF0000)
 
-    await message.edit(embed=embed)
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
 
 @commands.command(name='restorebackup')
@@ -3841,9 +4023,9 @@ async def restore_from_cloud(ctx):
         "**ALL CURRENT DATA WILL BE LOST!**\n\n"
         "React with ✅ to confirm or ❌ to cancel.",
         color=0xFF8800)
-    message = await ctx.send(embed=embed)
-    await message.add_reaction("✅")
-    await message.add_reaction("❌")
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+    await ctx.bot.safe_add_reaction(message, "✅")
+    await ctx.bot.safe_add_reaction(message, "❌")
 
     def check(reaction, user):
         return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
@@ -3860,7 +4042,7 @@ async def restore_from_cloud(ctx):
                 description=
                 "Downloading and restoring backup from cloud storage.",
                 color=0xFFAA00)
-            await message.edit(embed=embed)
+            await ctx.bot.safe_edit_message(message, embed=embed)
 
             success = await ctx.bot.safe_api_call(
                 ctx.bot.backup_manager.restore_from_cloud)
@@ -3888,7 +4070,7 @@ async def restore_from_cloud(ctx):
             description="Restore confirmation timed out. Operation cancelled.",
             color=0x808080)
 
-    await message.edit(embed=embed)
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
 
 @commands.command(name='adopt')
@@ -3906,7 +4088,7 @@ async def adopt_beast(ctx):
             description=
             f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     now = datetime.datetime.now()
@@ -3924,7 +4106,7 @@ async def adopt_beast(ctx):
                 description=
                 f"You can adopt another beast in {hours}h {minutes}m",
                 color=0xFF8000)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
     template = ctx.bot.template_manager.get_random_template_up_to_rarity(
@@ -3955,7 +4137,7 @@ async def adopt_beast(ctx):
         f"<t:{int((now + datetime.timedelta(hours=ctx.bot.config.adopt_cooldown_hours)).timestamp())}:R>",
         inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='beasts', aliases=['inventory', 'inv'])
@@ -3972,7 +4154,7 @@ async def show_beasts(ctx, page: int = 1):
             description=
             f"You don't have any beasts yet!\nUse `{ctx.bot.config.prefix}adopt` or catch wild beasts to start your collection.",
             color=0x808080)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Pagination
@@ -4004,7 +4186,7 @@ async def show_beasts(ctx, page: int = 1):
         text=
         f"💰 {user.spirit_stones:,} Beast Stones | Use {ctx.bot.config.prefix}beast <id> for details"
     )
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='help')
@@ -4112,7 +4294,7 @@ async def help_command(ctx):  # ✅ Added missing 'self' parameter
     )
     embed.timestamp = discord.utils.utcnow()
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='beast', aliases=['info'])
@@ -4132,7 +4314,7 @@ async def beast_info(ctx, beast_id: int):
             title="❌ Beast Not Found",
             description=f"You don't own a beast with ID #{beast_id}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     embed = discord.Embed(
@@ -4181,7 +4363,7 @@ async def beast_info(ctx, beast_id: int):
     embed.set_footer(
         text=
         f"Use {ctx.bot.config.prefix}active {beast_id} to set as active beast")
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='active')
@@ -4201,7 +4383,7 @@ async def set_active_beast(ctx, beast_id: int):
             title="❌ Beast Not Found",
             description=f"You don't own a beast with ID #{beast_id}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     user.active_beast_id = beast_id
@@ -4221,7 +4403,7 @@ async def set_active_beast(ctx, beast_id: int):
                     value=f"+{ctx.bot.config.xp_per_message}",
                     inline=True)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='balance', aliases=['stones'])
@@ -4257,7 +4439,7 @@ async def show_balance(ctx):
         f"Total Catches: {user.total_catches}\nBattles: {user.total_battles}\nWin Rate: {user.win_rate:.1f}%",
         inline=True)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # Add this new heal command to your commands section
@@ -4280,7 +4462,7 @@ async def heal_beast(ctx, beast_id: int):
             f"You currently have **{user.spirit_stones} stones**.\n"
             f"Use `{ctx.bot.config.prefix}stone` to get daily stones.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Get user's beasts
@@ -4300,7 +4482,7 @@ async def heal_beast(ctx, beast_id: int):
             title="❌ Beast Not Found",
             description=f"You don't own a beast with ID #{beast_id}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if beast is already at full HP
@@ -4313,7 +4495,7 @@ async def heal_beast(ctx, beast_id: int):
         embed.add_field(name="💰 Beast Stones",
                         value=f"No stones spent: {user.spirit_stones}",
                         inline=True)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Calculate healing amount
@@ -4356,7 +4538,7 @@ async def heal_beast(ctx, beast_id: int):
         text=
         f"Use {ctx.bot.config.prefix}beast {beast_id} to view full beast details"
     )
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # Also add this enhanced heal_all command as a bonus feature
@@ -4375,7 +4557,7 @@ async def heal_all_beasts(ctx):
         embed = discord.Embed(title="📦 No Beasts",
                               description="You don't have any beasts to heal!",
                               color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Find damaged beasts
@@ -4389,7 +4571,7 @@ async def heal_all_beasts(ctx):
             title="💚 All Beasts Healthy",
             description="All your beasts are already at full HP!",
             color=0x00FF00)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Calculate total cost
@@ -4417,7 +4599,7 @@ async def heal_all_beasts(ctx):
                         (f"\n... and {len(damaged_beasts)-5} more"
                          if len(damaged_beasts) > 5 else ""),
                         inline=False)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Heal all damaged beasts
@@ -4466,7 +4648,7 @@ async def heal_all_beasts(ctx):
             f"All {len(healed_beasts)} damaged beasts restored to full health!",
             inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # USER STATS AND LEADERBOARD COMMANDS
@@ -4489,7 +4671,7 @@ async def check_user_beasts(ctx, user: discord.Member):
                 title="📦 Empty Beast Collection",
                 description=f"{user.display_name} doesn't have any beasts yet.",
                 color=0x808080)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
         # Create detailed embed
@@ -4548,14 +4730,14 @@ async def check_user_beasts(ctx, user: discord.Member):
 
         embed.set_footer(
             text=f"Admin command used by {ctx.author.display_name}")
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     except Exception as e:
         embed = discord.Embed(
             title="❌ Error",
             description=f"Failed to retrieve user beast data: {str(e)}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='userstats')
@@ -4566,7 +4748,8 @@ async def user_stats(ctx, user: Optional[discord.Member] = None):
 
     # ✅ FIXED: Add assertion to ensure user is not None
     if user is None:
-        await ctx.send("❌ Unable to determine user.")
+        await ctx.bot.safe_send_message(ctx.channel,
+                                        "❌ Unable to determine user.")
         return
 
     try:
@@ -4659,18 +4842,19 @@ async def user_stats(ctx, user: Optional[discord.Member] = None):
                     break
 
         embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     except Exception as e:
         embed = discord.Embed(
             title="❌ Error",
             description=f"Failed to retrieve user stats: {str(e)}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='leaderboard', aliases=['lb', 'top'])
-async def leaderboard(ctx,category: str = "beasts",
+async def leaderboard(ctx,
+                      category: str = "beasts",
                       limit: int = 10):  # ✅ Added missing 'self'
     """Show various leaderboards
 
@@ -4689,7 +4873,7 @@ async def leaderboard(ctx,category: str = "beasts",
             title="❌ Invalid Category",
             description=f"Valid categories: {', '.join(valid_categories)}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # ✅ FIXED: Initialize variables with defaults
@@ -4709,7 +4893,7 @@ async def leaderboard(ctx,category: str = "beasts",
                 title="📊 Empty Leaderboard",
                 description="No users found in the database.",
                 color=0x808080)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
         # Calculate leaderboard data
@@ -4758,7 +4942,7 @@ async def leaderboard(ctx,category: str = "beasts",
                 title="📊 Empty Leaderboard",
                 description="No valid users found for leaderboard.",
                 color=0x808080)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
         # Sort based on category
@@ -4803,7 +4987,7 @@ async def leaderboard(ctx,category: str = "beasts",
                 title="❌ Unexpected Error",
                 description="Invalid category detected after validation.",
                 color=0xFF0000)
-            await ctx.send(embed=embed)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
         # Create leaderboard embed
@@ -4865,14 +5049,14 @@ async def leaderboard(ctx,category: str = "beasts",
             embed.set_footer(
                 text="Start your journey to climb the leaderboard!")
 
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     except Exception as e:
         embed = discord.Embed(
             title="❌ Leaderboard Error",
             description=f"Failed to generate leaderboard: {str(e)}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='serverbeasts', aliases=['serverstats'])
@@ -5001,14 +5185,14 @@ async def server_beast_stats(ctx):
             text=
             f"Data as of {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} | Use !leaderboard for rankings"
         )
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     except Exception as e:
         embed = discord.Embed(
             title="❌ Server Stats Error",
             description=f"Failed to generate server statistics: {str(e)}",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='battle', aliases=['fight'])
@@ -5041,7 +5225,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         embed.set_footer(
             text="⚔️ IMMORTAL BEAST ARENA • Choose your opponent wisely!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Enhanced error: Opponent is a bot
@@ -5073,7 +5257,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         embed.set_footer(
             text="⚔️ IMMORTAL BEAST ARENA • Only humans can command beasts!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Enhanced error: Trying to battle yourself
@@ -5107,7 +5291,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             text=
             "⚔️ IMMORTAL BEAST ARENA • Challenge others to prove your worth!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Get user beasts
@@ -5147,7 +5331,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             "⚔️ IMMORTAL BEAST ARENA • Every legend starts with a single beast!"
         )
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Enhanced error: Opponent has no beasts
@@ -5182,7 +5366,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             text=
             "⚔️ IMMORTAL BEAST ARENA • Help others start their beast journey!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Let challenger select their beast
@@ -5218,7 +5402,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         embed.set_footer(
             text="⚔️ IMMORTAL BEAST ARENA • Quick decisions lead to victory!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Let opponent select their beast
@@ -5255,7 +5439,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         embed.set_footer(
             text="⚔️ IMMORTAL BEAST ARENA • Patience leads to epic battles!")
         embed.timestamp = discord.utils.utcnow()
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     if challenger_beast[1].stats.hp < challenger_beast[1].stats.max_hp * 0.1:
@@ -5264,7 +5448,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             description=
             f"{challenger_beast[1].name} is too injured to battle! Heal them first.",
             color=0xFF8800)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if opponent's beast is too injured to battle
@@ -5274,7 +5458,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             description=
             f"{opponent_beast[1].name} is too injured to battle! They need to heal first.",
             color=0xFF8800)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Simulate the battle
@@ -5303,6 +5487,65 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
     else:
         winner_user = None
         loser_user = None
+
+    if winner_user:  # If there's a winner (not a draw)
+        # Identify winner and loser beasts
+        if winner_user == ctx.author:
+            winner_beast_obj = challenger_beast[1]
+            loser_beast_obj = opponent_beast[1]
+            winner_beast_id = challenger_beast[0]
+            loser_beast_id = opponent_beast[0]
+        else:
+            winner_beast_obj = opponent_beast[1]
+            loser_beast_obj = challenger_beast[1]
+            winner_beast_id = opponent_beast[0]
+            loser_beast_id = challenger_beast[0]
+
+        # Calculate XP for both participants
+        winner_xp = calculate_enhanced_battle_xp(
+            winner_beast_obj, loser_beast_obj, battle_result['turns'], is_winner=True
+        )
+
+        loser_xp = calculate_enhanced_battle_xp(
+            loser_beast_obj, winner_beast_obj, battle_result['turns'], is_winner=False
+        )
+
+        # Apply XP to beasts
+        winner_levelups = winner_beast_obj.stats.add_exp(winner_xp, winner_beast_obj.rarity)
+        loser_levelups = loser_beast_obj.stats.add_exp(loser_xp, loser_beast_obj.rarity)
+
+        # Update database with new XP and levels
+        await ctx.bot.db.update_beast(winner_beast_id, winner_beast_obj)
+        await ctx.bot.db.update_beast(loser_beast_id, loser_beast_obj)
+
+        # Store XP info for embed display
+        xp_info = {
+            'winner_xp': winner_xp,
+            'loser_xp': loser_xp,
+            'winner_levelups': winner_levelups,
+            'loser_levelups': loser_levelups,
+            'winner_beast': winner_beast_obj,
+            'loser_beast': loser_beast_obj,
+            'winner_user': winner_user,
+            'loser_user': loser_user
+        }
+    else:
+        # Handle draw case - both get participation XP
+        draw_xp = 30
+
+        challenger_levelups = challenger_beast[1].stats.add_exp(draw_xp, challenger_beast[1].rarity)
+        opponent_levelups = opponent_beast[1].stats.add_exp(draw_xp, opponent_beast[1].rarity)
+
+        await ctx.bot.db.update_beast(challenger_beast[0], challenger_beast[1])
+        await ctx.bot.db.update_beast(opponent_beast[0], opponent_beast[1])
+
+        xp_info = {
+            'draw': True,
+            'challenger_xp': draw_xp,
+            'opponent_xp': draw_xp,
+            'challenger_levelups': challenger_levelups,
+            'opponent_levelups': opponent_levelups
+        }
 
     await ctx.bot.db.update_user(challenger_user)
     await ctx.bot.db.update_user(opponent_user)
@@ -5462,7 +5705,67 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         f"{opponent_health_bar} `{opponent_hp_percent}%`\n" +
         f"`{opponent_final_hp:,}/{opponent_beast_obj.stats.max_hp:,} HP`",
         inline=False)
+    # XP Rewards Display Section (REPLACE ENTIRE BROKEN SECTION)
+    if 'xp_info' in locals() and not xp_info.get('draw', False):
+        # Winner/Loser XP display
+        embed.add_field(
+            name="⚡ **EXPERIENCE REWARDS**",
+            value=f"### 🏆 {xp_info['winner_user'].display_name}'s {xp_info['winner_beast'].name}\n" +
+                  f"```
+                  f"+ Victory XP: {xp_info['winner_xp']}\n" +
+                  f"+ New Level: {xp_info['winner_beast'].stats.level}\n" +
+                  f"```\n" +
+                  f"### 📚 {xp_info['loser_user'].display_name}'s {xp_info['loser_beast'].name}\n" +
+                  f"```
+                  f"Participation XP: {xp_info['loser_xp']}\n" +
+                  f"New Level: {xp_info['loser_beast'].stats.level}\n" +
+                  f"```",
+            inline=False
+        )
 
+        # Level up notifications
+        level_up_messages = []
+
+        if xp_info['winner_levelups']:
+            level_count = len(xp_info['winner_levelups'])
+            level_up_messages.append(f"🎆 **{xp_info['winner_beast'].name}** gained {level_count} level(s)!")
+
+        if xp_info['loser_levelups']:
+            level_count = len(xp_info['loser_levelups'])
+            level_up_messages.append(f"📈 **{xp_info['loser_beast'].name}** gained {level_count} level(s)!")
+
+        if level_up_messages:
+            embed.add_field(
+                name="🎉 **LEVEL UP ACHIEVEMENTS**",
+                value="\n".join(level_up_messages),
+                inline=False
+            )
+
+    elif 'xp_info' in locals() and xp_info.get('draw', False):
+        # Draw XP display
+        embed.add_field(
+            name="⚡ **MUTUAL EXPERIENCE**",
+            value=f"```
+                  f"{ctx.author.display_name}: +{xp_info['challenger_xp']} XP\n" +
+                  f"{opponent.display_name}: +{xp_info['opponent_xp']} XP\n" +
+                  f"```\n" +
+                  f"🤝 **Both warriors grow stronger from this honorable clash!**",
+            inline=False
+        )
+
+        # Draw level ups
+        draw_levelups = []
+        if xp_info['challenger_levelups']:
+            draw_levelups.append(f"📈 {challenger_beast[1].name} gained {len(xp_info['challenger_levelups'])} level(s)!")
+        if xp_info['opponent_levelups']:
+            draw_levelups.append(f"📈 {opponent_beast[1].name} gained {len(xp_info['opponent_levelups'])} level(s)!")
+
+        if draw_levelups:
+            embed.add_field(
+                name="🎉 **LEVEL BREAKTHROUGHS**",
+                value="\n".join(draw_levelups),
+                inline=False
+            )
     # Dynamic rewards section
     if winner_user:
         embed.add_field(name="🎁 **SPOILS OF WAR**",
@@ -5502,7 +5805,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
 
     embed.timestamp = discord.utils.utcnow()
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='adopt_legend', aliases=['adoptlegend'])
@@ -5519,7 +5822,7 @@ async def adopt_legend_beast(ctx):
             title="❌ Insufficient Permissions",
             description="You need a special role to use this command!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if already used
@@ -5529,7 +5832,7 @@ async def adopt_legend_beast(ctx):
             description=
             "You have already used your one-time legendary adoption!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check inventory space
@@ -5540,7 +5843,7 @@ async def adopt_legend_beast(ctx):
             description=
             f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Get a guaranteed legendary beast
@@ -5552,7 +5855,7 @@ async def adopt_legend_beast(ctx):
             description=
             "No legendary beasts are currently available in the template.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     beast = template.create_beast()
@@ -5595,7 +5898,7 @@ async def adopt_legend_beast(ctx):
 
     embed.set_footer(
         text=f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit}")
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='adopt_mythic', aliases=['adoptmythic'])
@@ -5612,7 +5915,7 @@ async def adopt_mythic_beast(ctx):
             title="❌ Insufficient Permissions",
             description="You need the personal role to use this command!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check if already used
@@ -5621,7 +5924,7 @@ async def adopt_mythic_beast(ctx):
             title="❌ Already Used",
             description="You have already used your one-time mythic adoption!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Check inventory space
@@ -5632,7 +5935,7 @@ async def adopt_mythic_beast(ctx):
             description=
             f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\nUse `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Get a guaranteed mythic beast
@@ -5644,7 +5947,7 @@ async def adopt_mythic_beast(ctx):
             description=
             "No mythic beasts are currently available in the template.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     beast = template.create_beast()
@@ -5691,7 +5994,7 @@ async def adopt_mythic_beast(ctx):
         text=
         f"Beast Inventory: {len(user_beasts) + 1}/{beast_limit} | You own a MYTHIC beast!"
     )
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='adoption_status', aliases=['adoptstatus'])
@@ -5787,7 +6090,7 @@ async def adoption_status(ctx):
                         value="All adoptions are on cooldown or used",
                         inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # Replace the existing setchannel and removechannel commands with these:
@@ -5808,7 +6111,88 @@ async def set_spawn_channel(ctx):
         value=
         "This change is temporary. Update your environment variables for permanent change.",
         inline=False)
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
+@commands.command(name='antispam')
+@commands.has_permissions(administrator=True) 
+async def configure_antispam(ctx, setting: Optional[str] = None, value: Optional[int] = None):
+    """Configure anti-spam settings (admin only)"""
+
+    valid_settings = {
+        'minlength': 'min_message_length',
+        'similarity': 'max_similar_messages', 
+        'frequency': 'message_frequency_limit',
+        'cooldown': 'xp_cooldown_seconds'
+    }
+
+    if setting is None:
+        # Show current settings
+        embed = discord.Embed(
+            title="🛡️ Anti-Spam Configuration",
+            description="Current anti-spam settings",
+            color=0x00AAFF)
+
+        embed.add_field(
+            name="📏 Message Length",
+            value=f"Minimum: {ctx.bot.config.min_message_length} characters",
+            inline=True)
+
+        embed.add_field(
+            name="🔄 Similarity Check", 
+            value=f"Max similar: {ctx.bot.config.max_similar_messages} messages",
+            inline=True)
+
+        embed.add_field(
+            name="⚡ Frequency Limit",
+            value=f"Max: {ctx.bot.config.message_frequency_limit} messages/2min",
+            inline=True)
+
+        embed.add_field(
+            name="⏰ XP Cooldown",
+            value=f"{ctx.bot.config.xp_cooldown_seconds} seconds",
+            inline=True)
+
+        embed.add_field(
+            name="🔧 Usage",
+            value=f"`{ctx.bot.config.prefix}antispam <setting> <value>`\n"
+                  f"Settings: {', '.join(valid_settings.keys())}",
+            inline=False)
+
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    if setting.lower() not in valid_settings:
+        embed = discord.Embed(
+            title="❌ Invalid Setting",
+            description=f"Valid settings: {', '.join(valid_settings.keys())}",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    if value is None:
+        embed = discord.Embed(
+            title="❌ Missing Value", 
+            description=f"Please provide a value for {setting}",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Update the setting
+    config_attr = valid_settings[setting.lower()]
+    old_value = getattr(ctx.bot.config, config_attr)
+    setattr(ctx.bot.config, config_attr, value)
+
+    embed = discord.Embed(
+        title="✅ Anti-Spam Setting Updated",
+        description=f"**{setting.title()}** changed from `{old_value}` to `{value}`",
+        color=0x00FF00)
+
+    embed.add_field(
+        name="⚠️ Note",
+        value="This change is temporary. Update environment variables for permanent change.",
+        inline=False)
+
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='removechannel')
@@ -5828,7 +6212,7 @@ async def remove_spawn_channel(ctx):
             description=
             f"{ctx.channel.mention} is not the current spawn channel.",
             color=0xFF0000)
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='catch')
@@ -5840,7 +6224,7 @@ async def catch_beast(ctx):
             title="❌ No Beast Here",
             description="There's no beast to catch in this channel!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     beast = ctx.bot.current_spawned_beast
@@ -5854,7 +6238,7 @@ async def catch_beast(ctx):
             description=
             f"You've already used all {ctx.bot.max_catch_attempts} attempts to catch this beast!",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
@@ -5869,7 +6253,7 @@ async def catch_beast(ctx):
             f"Your inventory is full ({len(user_beasts)}/{beast_limit} beasts)!\n"
             f"Use `{ctx.bot.config.prefix}sacrifice <beast_id>` to make room.",
             color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     # Increment attempt count
@@ -5935,7 +6319,7 @@ async def catch_beast(ctx):
                 value="You've used all your attempts for this beast!",
                 inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # Flask Web Server (to keep Render happy)
@@ -6031,7 +6415,7 @@ async def backup_status(ctx):
                         value=f"Storage usage at {usage_percent:.1f}%",
                         inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='backup')
@@ -6042,7 +6426,7 @@ async def manual_backup(ctx):
         title="🔄 Creating Backup...",
         description="Please wait while the backup is created.",
         color=0xFFAA00)
-    message = await ctx.send(embed=embed)
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
     try:
         backup_file = await ctx.bot.db.backup_database(
@@ -6074,7 +6458,7 @@ async def manual_backup(ctx):
                               description=f"An error occurred: {str(e)}",
                               color=0xFF0000)
 
-    await message.edit(embed=embed)
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
 
 # Add this command to help debug channel configuration:
@@ -6135,7 +6519,7 @@ async def show_channel_config(ctx):
                     value=f"#{ctx.channel.name} ({ctx.channel.id})",
                     inline=False)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 @commands.command(name='cleanbackups')
@@ -6150,7 +6534,7 @@ async def clean_backups(ctx, keep_count: Optional[int] = None):
         embed = discord.Embed(title="❌ Invalid Count",
                               description="Keep count must be at least 1.",
                               color=0xFF0000)
-        await ctx.send(embed=embed)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
     try:
@@ -6180,7 +6564,7 @@ async def clean_backups(ctx, keep_count: Optional[int] = None):
                               description=f"Error during cleanup: {str(e)}",
                               color=0xFF0000)
 
-    await ctx.send(embed=embed)
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 
 # In your main() function, add these two lines with the other bot.add_command() calls:
@@ -6200,42 +6584,42 @@ def main():
     bot = ImmortalBeastsBot(config)
 
     # ❌ REMOVE ALL OF THESE:
-    bot.add_command(catch_beast)
-    bot.add_command(daily_stone_reward)
-    bot.add_command(adopt_beast)
-    bot.add_command(show_beasts)
-    bot.add_command(help_command)
-    bot.add_command(beast_info)
-    bot.add_command(set_active_beast)
-    bot.add_command(show_balance)
-    bot.add_command(battle_command)
-    bot.add_command(adopt_legend_beast)
-    bot.add_command(adopt_mythic_beast)
-    bot.add_command(adoption_status)
-    bot.add_command(force_spawn)
-    bot.add_command(spawn_info)
-    bot.add_command(next_spawn_time)
-    bot.add_command(backup_status)
-    bot.add_command(manual_backup)
-    bot.add_command(clean_backups)
-    bot.add_command(set_spawn_channel)
-    bot.add_command(remove_spawn_channel)
-    bot.add_command(show_channel_config)
-    bot.add_command(sacrifice_beast)
-    bot.add_command(release_beast)
-    bot.add_command(fix_xp_cooldown)
-    bot.add_command(check_cooldown)
-    bot.add_command(ping_command)
-    bot.add_command(heal_beast)
-    bot.add_command(heal_all_beasts)
-    bot.add_command(manual_cloud_backup)
-    bot.add_command(restore_from_cloud)
-    bot.add_command(check_user_beasts)
-    bot.add_command(user_stats)
-    bot.add_command(leaderboard)
-    bot.add_command(server_beast_stats)
-    bot.add_command(xp_config)
-    bot.add_command(xp_status)
+    #bot.add_command(catch_beast)
+    #bot.add_command(daily_stone_reward)
+    #bot.add_command(adopt_beast)
+    #bot.add_command(show_beasts)
+    #bot.add_command(help_command)
+    #bot.add_command(beast_info)
+    #bot.add_command(set_active_beast)
+    #bot.add_command(show_balance)
+    #bot.add_command(battle_command)
+    #bot.add_command(adopt_legend_beast)
+    #bot.add_command(adopt_mythic_beast)
+    #bot.add_command(adoption_status)
+    #bot.add_command(force_spawn)
+    #bot.add_command(spawn_info)
+    #bot.add_command(next_spawn_time)
+    #bot.add_command(backup_status)
+    #bot.add_command(manual_backup)
+    #bot.add_command(clean_backups)
+    #bot.add_command(set_spawn_channel)
+    #bot.add_command(remove_spawn_channel)
+    #bot.add_command(show_channel_config)
+    #bot.add_command(sacrifice_beast)
+    #bot.add_command(release_beast)
+    #bot.add_command(fix_xp_cooldown)
+    #bot.add_command(check_cooldown)
+    #bot.add_command(ping_command)
+    #bot.add_command(heal_beast)
+    #bot.add_command(heal_all_beasts)
+    #bot.add_command(manual_cloud_backup)
+    #bot.add_command(restore_from_cloud)
+    #bot.add_command(check_user_beasts)
+    #bot.add_command(user_stats)
+    #bot.add_command(leaderboard)
+    #bot.add_command(server_beast_stats)
+    #bot.add_command(xp_config)
+    #bot.add_command(xp_status)
 
     try:
         bot.run(config.token)
