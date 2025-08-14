@@ -2173,52 +2173,52 @@ class ImmortalBeastsBot(commands.Bot):
         self.logger = logging.getLogger(__name__)
 
     async def safe_api_call(self,
-        api_func,
-        guild_id: Optional[int] = None,
-        *args,
-        **kwargs):
-    """Enhanced safe API call with better rate limiting"""
+                             api_func,
+                             guild_id: Optional[int] = None,
+                             *args,
+                             **kwargs):
+        """Enhanced safe API call with better rate limiting"""
 
-    # Use guild-specific rate limiter if guild_id is provided
-    if guild_id:
-    try:
-    guild_rate_limiter = await self.guild_rate_manager.get_api_rate_limiter(
-    guild_id)
-    rate_limiter = guild_rate_limiter
-    except Exception as e:
-    self.logger.warning(
-    f"Failed to get guild rate limiter for {guild_id}: {e}")
-    rate_limiter = self.api_rate_limiter
-    else:
-    rate_limiter = self.api_rate_limiter
+        # Use guild-specific rate limiter if guild_id is provided
+        if guild_id:
+            try:
+                guild_rate_limiter = await self.guild_rate_manager.get_api_rate_limiter(
+                    guild_id)
+                rate_limiter = guild_rate_limiter
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to get guild rate limiter for {guild_id}: {e}")
+                rate_limiter = self.api_rate_limiter
+        else:
+            rate_limiter = self.api_rate_limiter
 
-    for attempt in range(3):  # REDUCED from 5 to 3 attempts
-    try:
-    # INCREASED wait time before each call
-    wait_time = await rate_limiter.wait_if_needed()
-    if wait_time:
-    self.logger.info(
-    f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s")
+        for attempt in range(3):  # REDUCED from 5 to 3 attempts
+            try:
+                # INCREASED wait time before each call
+                wait_time = await rate_limiter.wait_if_needed()
+                if wait_time:
+                    self.logger.info(
+                        f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s")
 
-    result = await api_func(*args, **kwargs)
-    return result
+                result = await api_func(*args, **kwargs)
+                return result
 
-    except Exception as e:
-    if hasattr(e, "status") and getattr(e, "status", None) == 429:
-    # EXPONENTIAL BACKOFF - much more conservative
-    wait = min(300, 30 * (2**attempt))  # Cap at 5 minutes
-    self.logger.warning(
-    f"429 error, backing off for {wait} seconds (attempt {attempt+1})")
-    await asyncio.sleep(wait)
-    else:
-    self.logger.error(f"API call failed: {e}")
-    if attempt < 2:  # Only retry for non-429 errors once
-    await asyncio.sleep(5)
-    else:
-    break
+            except Exception as e:
+                if hasattr(e, "status") and getattr(e, "status", None) == 429:
+                    # EXPONENTIAL BACKOFF - much more conservative
+                    wait = min(300, 30 * (2**attempt))  # Cap at 5 minutes
+                    self.logger.warning(
+                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})")
+                    await asyncio.sleep(wait)
+                else:
+                    self.logger.error(f"API call failed: {e}")
+                    if attempt < 2:  # Only retry for non-429 errors once
+                        await asyncio.sleep(5)
+                    else:
+                        break
 
-    self.logger.error("Max retries exceeded for API call")
-    return None
+        self.logger.error("Max retries exceeded for API call")
+        return None
 
 
 
