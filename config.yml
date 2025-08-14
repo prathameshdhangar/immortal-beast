@@ -1,0 +1,51 @@
+# Bot Configuration
+token: "YOUR_BOT_TOKEN_HERE"
+prefix: "!"
+database_path: "data/immortal_beasts.db"
+
+# Role Configuration
+special_role_ids:
+  - 1393927051685400790
+  - 1393094845479780426
+personal_role_id: 1393176170601775175
+
+# Channel Configuration
+xp_chat_channel_ids:
+  - 1393424880787259482
+  - 1393626191935705198
+  - 1394289930515124325
+  - 1393163125850640414
+battle_channel_ids:
+  - 1397783271961792604
+  - 1397783317163806730
+adopt_channel_id: 1397783378618748948
+spawn_channel_id: 1397783188394475520
+
+# System Settings - UPDATED FOR RATE LIMITING
+backup_enabled: true
+backup_interval_hours: 6
+backup_retention_count: 10
+backup_max_size_mb: 100
+log_level: "INFO"
+api_max_requests_per_minute: 30  # Reduced from 60
+api_retry_backoff_seconds: 5     # Increased from 2
+api_max_retries: 3               # NEW: Maximum retry attempts
+batch_processing_enabled: true   # NEW: Enable batch processing
+batch_interval_seconds: 30       # NEW: Process batches every 30 seconds
+
+# User Limits
+normal_user_beast_limit: 6
+special_role_beast_limit: 8
+personal_role_beast_limit: 10
+
+# Game Settings - ROLE-BASED XP SYSTEM
+xp_rewards:
+  normal_user: 25        # Base users
+  special_role: 32       # Users with special_role_ids
+  personal_role: 40      # Users with personal_role_id
+xp_cooldown_seconds: 60  # Same cooldown for all
+
+starting_beast_stones: 1000
+adopt_cooldown_hours: 48
+max_concurrent_operations: 5     # NEW: Limit concurrent operations
+cache_ttl_seconds: 300          # NEW: Cache data for 5 minutes
