@@ -5742,7 +5742,7 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         # Draw XP display
         embed.add_field(
             name="⚡ **MUTUAL EXPERIENCE**",
-            value=(f"```
+            value=(f"```\n" +
                    f"{ctx.author.display_name}: +{xp_info['challenger_xp']} XP\n" +
                    f"{opponent.display_name}: +{xp_info['opponent_xp']} XP\n" +
                    f"```\n" +
