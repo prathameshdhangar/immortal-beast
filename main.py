@@ -28,6 +28,7 @@ from utils.guild_rate_manager import GuildRateLimitManager
 from utils.rate_limiter import RateLimiter
 from cogs.rate_limit_config import RateLimitConfig
 
+
 # Configuration Management
 class BotConfig(BaseModel):
     """Bot configuration with validation"""
@@ -123,11 +124,14 @@ class BotConfig(BaseModel):
                                                description="Not used for XP")
 
     # XP Anti-Spam Settings
-    min_message_length: int = Field(default=5, description="Minimum message length for XP")
-    max_similar_messages: int = Field(default=2, description="Max similar messages before spam detection")
-    message_frequency_limit: int = Field(default=6, description="Max messages per 2 minutes for XP")
-    xp_spam_cooldown_minutes: int = Field(default=5, description="Cooldown after spam detection")
-
+    min_message_length: int = Field(
+        default=5, description="Minimum message length for XP")
+    max_similar_messages: int = Field(
+        default=2, description="Max similar messages before spam detection")
+    message_frequency_limit: int = Field(
+        default=6, description="Max messages per 2 minutes for XP")
+    xp_spam_cooldown_minutes: int = Field(
+        default=5, description="Cooldown after spam detection")
 
     # Starting resources
     starting_beast_stones: int = Field(
@@ -216,7 +220,10 @@ class BotConfig(BaseModel):
         if os.getenv('PORT'):  # Production (Heroku/Railway)
             backup_retention = 3
             backup_interval = 12
-            database_path = '/tmp/immortal_beasts.db'  # Production path
+            database_path = os.getenv(
+                'DATABASE_PATH',
+                '/opt/render/project/src/data/immortal_beasts.db'
+            )  # Production path
         else:  # Development
             backup_retention = 10
             backup_interval = 6
@@ -331,8 +338,12 @@ class UserRole(Enum):
     SPECIAL = "special"
     PERSONAL = "personal"
 
+
 # Move this OUTSIDE the BeastStats class, around line 400-500 (after BeastStats class definition)
-def calculate_enhanced_battle_xp(winner_beast, loser_beast, battle_turns, is_winner=True):
+def calculate_enhanced_battle_xp(winner_beast,
+                                 loser_beast,
+                                 battle_turns,
+                                 is_winner=True):
     """Enhanced XP calculation considering rarity and other factors"""
 
     # Base XP scales with opponent's rarity
@@ -353,7 +364,8 @@ def calculate_enhanced_battle_xp(winner_beast, loser_beast, battle_turns, is_win
 
         # David vs Goliath bonus (defeating higher rarity)
         if loser_beast.rarity.value > winner_beast.rarity.value:
-            underdog_bonus = (loser_beast.rarity.value - winner_beast.rarity.value) * 15
+            underdog_bonus = (loser_beast.rarity.value -
+                              winner_beast.rarity.value) * 15
         else:
             underdog_bonus = 0
 
@@ -372,7 +384,8 @@ def calculate_enhanced_battle_xp(winner_beast, loser_beast, battle_turns, is_win
 
         # Bonus for lasting against stronger opponent
         if winner_beast.rarity.value > loser_beast.rarity.value:
-            survival_bonus = (winner_beast.rarity.value - loser_beast.rarity.value) * 8
+            survival_bonus = (winner_beast.rarity.value -
+                              loser_beast.rarity.value) * 8
         else:
             survival_bonus = 0
 
@@ -383,6 +396,7 @@ def calculate_enhanced_battle_xp(winner_beast, loser_beast, battle_turns, is_win
         total_xp = participation_xp + survival_bonus + level_consolation
 
     return min(total_xp, 150)  # Higher cap for enhanced system
+
 
 # Data Models
 @dataclass
@@ -579,7 +593,8 @@ class BeastStats:
         old_hp = self.hp
         self.hp = min(self.max_hp, self.hp + amount)
         return self.hp - old_hp
-        
+
+
 # ✅ FIXED: Beast class moved to module level (NOT nested in BeastTemplate)
 @dataclass
 class Beast:
@@ -2157,16 +2172,22 @@ class ImmortalBeastsBot(commands.Bot):
                       logging.StreamHandler()])
         self.logger = logging.getLogger(__name__)
 
-    async def safe_api_call(self, api_func, guild_id: Optional[int] = None, *args, **kwargs):
+    async def safe_api_call(self,
+                            api_func,
+                            guild_id: Optional[int] = None,
+                            *args,
+                            **kwargs):
         """Enhanced safe API call with guild-specific rate limiting"""
 
         # Use guild-specific rate limiter if guild_id is provided
         if guild_id:
             try:
-                guild_rate_limiter = await self.guild_rate_manager.get_api_rate_limiter(guild_id)
+                guild_rate_limiter = await self.guild_rate_manager.get_api_rate_limiter(
+                    guild_id)
                 rate_limiter = guild_rate_limiter
             except Exception as e:
-                self.logger.warning(f"Failed to get guild rate limiter for {guild_id}: {e}")
+                self.logger.warning(
+                    f"Failed to get guild rate limiter for {guild_id}: {e}")
                 rate_limiter = self.api_rate_limiter  # Fallback to global
         else:
             # Fall back to global rate limiter
@@ -2176,7 +2197,9 @@ class ImmortalBeastsBot(commands.Bot):
             try:
                 wait_time = await rate_limiter.wait_if_needed()
                 if wait_time:
-                    self.logger.info(f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s")
+                    self.logger.info(
+                        f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s"
+                    )
 
                 result = await api_func(*args, **kwargs)
                 return result
@@ -2184,7 +2207,9 @@ class ImmortalBeastsBot(commands.Bot):
             except Exception as e:
                 if hasattr(e, "status") and getattr(e, "status", None) == 429:
                     wait = self.config.api_retry_backoff_seconds * (2**attempt)
-                    self.logger.warning(f"429 error, backing off for {wait} seconds (attempt {attempt+1})")
+                    self.logger.warning(
+                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})"
+                    )
                     await asyncio.sleep(wait)
                 else:
                     self.logger.error(f"API call failed: {e}")
@@ -2198,7 +2223,8 @@ class ImmortalBeastsBot(commands.Bot):
         guild_id = getattr(channel, 'guild', None)
         guild_id = guild_id.id if guild_id else None
 
-        return await self.safe_api_call(channel.send, guild_id, *args, **kwargs)
+        return await self.safe_api_call(channel.send, guild_id, *args,
+                                        **kwargs)
 
     async def safe_add_reaction(self, message, emoji):
         """Add reaction with rate limiting"""
@@ -2212,7 +2238,8 @@ class ImmortalBeastsBot(commands.Bot):
         guild_id = getattr(message, 'guild', None)
         guild_id = guild_id.id if guild_id else None
 
-        return await self.safe_api_call(message.edit, guild_id, *args, **kwargs)
+        return await self.safe_api_call(message.edit, guild_id, *args,
+                                        **kwargs)
 
     async def setup_hook(self):
         """Enhanced setup with automatic restoration - MESSAGE XP ONLY"""
@@ -2286,7 +2313,8 @@ class ImmortalBeastsBot(commands.Bot):
     async def handle_message_xp_gain(self, message):
         """Handle XP gain from messages with anti-spam protection"""
         try:
-            user = await self.get_or_create_user(message.author.id, str(message.author))
+            user = await self.get_or_create_user(message.author.id,
+                                                 str(message.author))
 
             # Check cooldown (now 60 seconds)
             if not user.can_gain_xp(self.config.xp_cooldown_seconds):
@@ -2317,7 +2345,8 @@ class ImmortalBeastsBot(commands.Bot):
             xp_amount = get_user_message_xp_amount(message.author, self.config)
 
             # Add XP and check for level ups
-            level_ups = active_beast.stats.add_exp(xp_amount, active_beast.rarity)
+            level_ups = active_beast.stats.add_exp(xp_amount,
+                                                   active_beast.rarity)
 
             # Update database
             user.last_xp_gain = datetime.datetime.now()
@@ -2329,11 +2358,16 @@ class ImmortalBeastsBot(commands.Bot):
                 for leveled_up, bonus_level, stat_gains in level_ups:
                     embed = discord.Embed(
                         title="🎉 Level Up!",
-                        description=f"{message.author.mention}'s **{active_beast.name}** leveled up!",
+                        description=
+                        f"{message.author.mention}'s **{active_beast.name}** leveled up!",
                         color=active_beast.rarity.color)
 
-                    embed.add_field(name="New Level", value=f"Level {active_beast.stats.level}", inline=True)
-                    embed.add_field(name="Power Level", value=active_beast.power_level, inline=True)
+                    embed.add_field(name="New Level",
+                                    value=f"Level {active_beast.stats.level}",
+                                    inline=True)
+                    embed.add_field(name="Power Level",
+                                    value=active_beast.power_level,
+                                    inline=True)
 
                     # Regular stat gains
                     gain_text = []
@@ -2341,7 +2375,9 @@ class ImmortalBeastsBot(commands.Bot):
                         if not stat.startswith('bonus_'):
                             gain_text.append(f"{stat.title()}: +{gain}")
 
-                    embed.add_field(name="Stat Gains", value="\n".join(gain_text), inline=False)
+                    embed.add_field(name="Stat Gains",
+                                    value="\n".join(gain_text),
+                                    inline=False)
 
                     # Bonus stats for level 5 multiples
                     if bonus_level:
@@ -2349,7 +2385,8 @@ class ImmortalBeastsBot(commands.Bot):
                         for stat, gain in stat_gains.items():
                             if stat.startswith('bonus_'):
                                 clean_stat = stat.replace('bonus_', '')
-                                bonus_text.append(f"{clean_stat.title()}: +{gain}")
+                                bonus_text.append(
+                                    f"{clean_stat.title()}: +{gain}")
 
                         embed.add_field(
                             name="🌟 Bonus Stats (Level 5 Multiple)!",
@@ -2393,17 +2430,17 @@ class ImmortalBeastsBot(commands.Bot):
             return True
 
         # Common spam phrases
-        spam_phrases = [
-            'xp', 'exp', 'experience', 'level up', 'lvl', 'farm'
-        ]
+        spam_phrases = ['xp', 'exp', 'experience', 'level up', 'lvl', 'farm']
 
         # If message is just spam phrases
         words = content_lower.split()
-        if len(words) <= 3 and any(phrase in content_lower for phrase in spam_phrases):
+        if len(words) <= 3 and any(phrase in content_lower
+                                   for phrase in spam_phrases):
             return True
 
         # Excessive punctuation or caps
-        punct_ratio = sum(1 for c in content if c in '!@#$%^&*().,?;:') / len(content)
+        punct_ratio = sum(
+            1 for c in content if c in '!@#$%^&*().,?;:') / len(content)
         if punct_ratio > 0.3:
             return True
 
@@ -2430,7 +2467,8 @@ class ImmortalBeastsBot(commands.Bot):
         # Check similarity with recent messages
         similar_count = 0
         for old_msg in user_history:
-            similarity = self._calculate_similarity(content.lower(), old_msg.lower())
+            similarity = self._calculate_similarity(content.lower(),
+                                                    old_msg.lower())
             if similarity > 0.8:  # 80% similar
                 similar_count += 1
 
@@ -2467,7 +2505,9 @@ class ImmortalBeastsBot(commands.Bot):
         timestamps = self._user_message_timestamps[user_id]
 
         # Remove timestamps older than 2 minutes
-        timestamps[:] = [ts for ts in timestamps if (now - ts).total_seconds() < 120]
+        timestamps[:] = [
+            ts for ts in timestamps if (now - ts).total_seconds() < 120
+        ]
 
         # If more than 6 messages in 2 minutes, it's spam
         if len(timestamps) >= 6:
@@ -2477,7 +2517,6 @@ class ImmortalBeastsBot(commands.Bot):
         timestamps.append(now)
 
         return False
-
 
     async def on_command_error(self, ctx, error):
         """Global error handler"""
@@ -3621,7 +3660,8 @@ async def xp_status(ctx):
     current_channel_valid = ctx.channel.id in ctx.bot.config.xp_chat_channel_ids
     embed.add_field(
         name="📍 Current Channel",
-        value=f"**{ctx.channel.name}**\nXP Enabled: {'✅ Yes' if current_channel_valid else '❌ No'}",
+        value=
+        f"**{ctx.channel.name}**\nXP Enabled: {'✅ Yes' if current_channel_valid else '❌ No'}",
         inline=True)
 
     # Active beast check
@@ -3636,12 +3676,14 @@ async def xp_status(ctx):
         if active_beast:
             embed.add_field(
                 name="🐉 Active Beast",
-                value=f"**{active_beast.name}** {active_beast.rarity.emoji}\nLevel {active_beast.stats.level} | ID: #{user.active_beast_id}",
+                value=
+                f"**{active_beast.name}** {active_beast.rarity.emoji}\nLevel {active_beast.stats.level} | ID: #{user.active_beast_id}",
                 inline=True)
         else:
             embed.add_field(
                 name="🐉 Active Beast",
-                value="❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
+                value=
+                "❌ **INVALID ID**\nYour active beast ID doesn't match any beast!",
                 inline=True)
     else:
         embed.add_field(
@@ -3653,61 +3695,66 @@ async def xp_status(ctx):
     cooldown_remaining = 0
     if user.last_xp_gain:
         time_since_last = datetime.datetime.now() - user.last_xp_gain
-        cooldown_remaining = max(0, ctx.bot.config.xp_cooldown_seconds - time_since_last.total_seconds())
+        cooldown_remaining = max(
+            0, ctx.bot.config.xp_cooldown_seconds -
+            time_since_last.total_seconds())
 
         if cooldown_remaining > 0:
             embed.add_field(
                 name="⏰ XP Cooldown",
-                value=f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
+                value=
+                f"❌ **{int(cooldown_remaining)}s remaining**\nNext XP available in {int(cooldown_remaining)} seconds",
                 inline=False)
         else:
-            embed.add_field(
-                name="⏰ XP Cooldown",
-                value="✅ **Ready to gain XP**\nNo cooldown active",
-                inline=False)
+            embed.add_field(name="⏰ XP Cooldown",
+                            value="✅ **Ready to gain XP**\nNo cooldown active",
+                            inline=False)
     else:
-        embed.add_field(
-            name="⏰ XP Cooldown",
-            value="✅ **Ready to gain XP**\nFirst time gaining XP",
-            inline=False)
+        embed.add_field(name="⏰ XP Cooldown",
+                        value="✅ **Ready to gain XP**\nFirst time gaining XP",
+                        inline=False)
 
     # Anti-spam information
     embed.add_field(
         name="🛡️ Anti-Spam Rules",
-        value=f"**Minimum Length:** {ctx.bot.config.min_message_length} characters\n"
-              f"**No Repetitive Messages:** Max {ctx.bot.config.max_similar_messages} similar\n"
-              f"**Rate Limit:** Max {ctx.bot.config.message_frequency_limit} messages/2min\n"
-              f"**No Spam Patterns:** caps, symbols, farming words",
+        value=
+        f"**Minimum Length:** {ctx.bot.config.min_message_length} characters\n"
+        f"**No Repetitive Messages:** Max {ctx.bot.config.max_similar_messages} similar\n"
+        f"**Rate Limit:** Max {ctx.bot.config.message_frequency_limit} messages/2min\n"
+        f"**No Spam Patterns:** caps, symbols, farming words",
         inline=False)
 
     # XP settings
     embed.add_field(
         name="⚙️ XP Settings",
         value=f"**XP per Message:** {ctx.bot.config.xp_per_message}\n"
-              f"**Cooldown:** {ctx.bot.config.xp_cooldown_seconds}s\n"
-              f"**Role Bonuses:** Special +30%, Personal +60%",
+        f"**Cooldown:** {ctx.bot.config.xp_cooldown_seconds}s\n"
+        f"**Role Bonuses:** Special +30%, Personal +60%",
         inline=True)
 
     # Recommendations
     recommendations = []
     if not user.active_beast_id:
-        recommendations.append(f"🎯 Use `{ctx.bot.config.prefix}active <beast_id>` to set active beast")
+        recommendations.append(
+            f"🎯 Use `{ctx.bot.config.prefix}active <beast_id>` to set active beast"
+        )
     if not current_channel_valid:
         recommendations.append("📍 Move to an XP-enabled channel")
     if cooldown_remaining > 0:
-        recommendations.append(f"⏰ Wait {int(cooldown_remaining)}s for cooldown")
+        recommendations.append(
+            f"⏰ Wait {int(cooldown_remaining)}s for cooldown")
 
     recommendations.append("💬 **Write meaningful messages** - avoid spam!")
     recommendations.append("📝 **Minimum 5 characters** per message")
     recommendations.append("🚫 **Avoid repetitive content** or farming phrases")
 
     if recommendations:
-        embed.add_field(
-            name="💡 Recommendations",
-            value="\n".join(recommendations),
-            inline=False)
+        embed.add_field(name="💡 Recommendations",
+                        value="\n".join(recommendations),
+                        inline=False)
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
 
 @commands.command(name='removexp')
 @commands.has_permissions(administrator=True)
@@ -5502,17 +5549,21 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             loser_beast_id = challenger_beast[0]
 
         # Calculate XP for both participants
-        winner_xp = calculate_enhanced_battle_xp(
-            winner_beast_obj, loser_beast_obj, battle_result['turns'], is_winner=True
-        )
+        winner_xp = calculate_enhanced_battle_xp(winner_beast_obj,
+                                                 loser_beast_obj,
+                                                 battle_result['turns'],
+                                                 is_winner=True)
 
-        loser_xp = calculate_enhanced_battle_xp(
-            loser_beast_obj, winner_beast_obj, battle_result['turns'], is_winner=False
-        )
+        loser_xp = calculate_enhanced_battle_xp(loser_beast_obj,
+                                                winner_beast_obj,
+                                                battle_result['turns'],
+                                                is_winner=False)
 
         # Apply XP to beasts
-        winner_levelups = winner_beast_obj.stats.add_exp(winner_xp, winner_beast_obj.rarity)
-        loser_levelups = loser_beast_obj.stats.add_exp(loser_xp, loser_beast_obj.rarity)
+        winner_levelups = winner_beast_obj.stats.add_exp(
+            winner_xp, winner_beast_obj.rarity)
+        loser_levelups = loser_beast_obj.stats.add_exp(loser_xp,
+                                                       loser_beast_obj.rarity)
 
         # Update database with new XP and levels
         await ctx.bot.db.update_beast(winner_beast_id, winner_beast_obj)
@@ -5533,8 +5584,10 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         # Handle draw case - both get participation XP
         draw_xp = 30
 
-        challenger_levelups = challenger_beast[1].stats.add_exp(draw_xp, challenger_beast[1].rarity)
-        opponent_levelups = opponent_beast[1].stats.add_exp(draw_xp, opponent_beast[1].rarity)
+        challenger_levelups = challenger_beast[1].stats.add_exp(
+            draw_xp, challenger_beast[1].rarity)
+        opponent_levelups = opponent_beast[1].stats.add_exp(
+            draw_xp, opponent_beast[1].rarity)
 
         await ctx.bot.db.update_beast(challenger_beast[0], challenger_beast[1])
         await ctx.bot.db.update_beast(opponent_beast[0], opponent_beast[1])
@@ -5710,59 +5763,59 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         # Winner/Loser XP display
         embed.add_field(
             name="⚡ **EXPERIENCE REWARDS**",
-            value=(f"### 🏆 {xp_info['winner_user'].display_name}'s {xp_info['winner_beast'].name}\n" +
-                   f"```\n" +
-                   f"Victory XP: {xp_info['winner_xp']}\n" +
-                   f"New Level: {xp_info['winner_beast'].stats.level}\n" +
-                   f"```\n" +
-                   f"### 📚 {xp_info['loser_user'].display_name}'s {xp_info['loser_beast'].name}\n" +
-                   f"```\n" +
-                   f"Participation XP: {xp_info['loser_xp']}\n" +
-                   f"New Level: {xp_info['loser_beast'].stats.level}\n" +
-                   f"```"),
-            inline=False
-        )
+            value=
+            (f"### 🏆 {xp_info['winner_user'].display_name}'s {xp_info['winner_beast'].name}\n"
+             + f"```\n" + f"Victory XP: {xp_info['winner_xp']}\n" +
+             f"New Level: {xp_info['winner_beast'].stats.level}\n" + f"```\n" +
+             f"### 📚 {xp_info['loser_user'].display_name}'s {xp_info['loser_beast'].name}\n"
+             + f"```\n" + f"Participation XP: {xp_info['loser_xp']}\n" +
+             f"New Level: {xp_info['loser_beast'].stats.level}\n" + f"```"),
+            inline=False)
 
         # Level up notifications
         level_up_messages = []
         if xp_info['winner_levelups']:
             level_count = len(xp_info['winner_levelups'])
-            level_up_messages.append(f"🎆 **{xp_info['winner_beast'].name}** gained {level_count} level(s)!")
+            level_up_messages.append(
+                f"🎆 **{xp_info['winner_beast'].name}** gained {level_count} level(s)!"
+            )
         if xp_info['loser_levelups']:
             level_count = len(xp_info['loser_levelups'])
-            level_up_messages.append(f"📈 **{xp_info['loser_beast'].name}** gained {level_count} level(s)!")
-        if level_up_messages:
-            embed.add_field(
-                name="🎉 **LEVEL UP ACHIEVEMENTS**",
-                value="\n".join(level_up_messages),
-                inline=False
+            level_up_messages.append(
+                f"📈 **{xp_info['loser_beast'].name}** gained {level_count} level(s)!"
             )
+        if level_up_messages:
+            embed.add_field(name="🎉 **LEVEL UP ACHIEVEMENTS**",
+                            value="\n".join(level_up_messages),
+                            inline=False)
 
     elif 'xp_info' in locals() and xp_info.get('draw', False):
         # Draw XP display
         embed.add_field(
             name="⚡ **MUTUAL EXPERIENCE**",
-            value=(f"```\n" +
-                   f"{ctx.author.display_name}: +{xp_info['challenger_xp']} XP\n" +
-                   f"{opponent.display_name}: +{xp_info['opponent_xp']} XP\n" +
-                   f"```\n" +
-                   f"🤝 **Both warriors grow stronger from this honorable clash!**"),
-            inline=False
-        )
+            value=(
+                f"```\n" +
+                f"{ctx.author.display_name}: +{xp_info['challenger_xp']} XP\n"
+                + f"{opponent.display_name}: +{xp_info['opponent_xp']} XP\n" +
+                f"```\n" +
+                f"🤝 **Both warriors grow stronger from this honorable clash!**"
+            ),
+            inline=False)
 
         # Draw level ups
         draw_levelups = []
         if xp_info['challenger_levelups']:
-            draw_levelups.append(f"📈 {challenger_beast[1].name} gained {len(xp_info['challenger_levelups'])} level(s)!")
-        if xp_info['opponent_levelups']:
-            draw_levelups.append(f"📈 {opponent_beast[1].name} gained {len(xp_info['opponent_levelups'])} level(s)!")
-        if draw_levelups:
-            embed.add_field(
-                name="🎉 **LEVEL BREAKTHROUGHS**",
-                value="\n".join(draw_levelups),
-                inline=False
+            draw_levelups.append(
+                f"📈 {challenger_beast[1].name} gained {len(xp_info['challenger_levelups'])} level(s)!"
             )
-
+        if xp_info['opponent_levelups']:
+            draw_levelups.append(
+                f"📈 {opponent_beast[1].name} gained {len(xp_info['opponent_levelups'])} level(s)!"
+            )
+        if draw_levelups:
+            embed.add_field(name="🎉 **LEVEL BREAKTHROUGHS**",
+                            value="\n".join(draw_levelups),
+                            inline=False)
 
     # Dynamic rewards section
     if winner_user:
@@ -6111,24 +6164,26 @@ async def set_spawn_channel(ctx):
         inline=False)
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
+
 @commands.command(name='antispam')
-@commands.has_permissions(administrator=True) 
-async def configure_antispam(ctx, setting: Optional[str] = None, value: Optional[int] = None):
+@commands.has_permissions(administrator=True)
+async def configure_antispam(ctx,
+                             setting: Optional[str] = None,
+                             value: Optional[int] = None):
     """Configure anti-spam settings (admin only)"""
 
     valid_settings = {
         'minlength': 'min_message_length',
-        'similarity': 'max_similar_messages', 
+        'similarity': 'max_similar_messages',
         'frequency': 'message_frequency_limit',
         'cooldown': 'xp_cooldown_seconds'
     }
 
     if setting is None:
         # Show current settings
-        embed = discord.Embed(
-            title="🛡️ Anti-Spam Configuration",
-            description="Current anti-spam settings",
-            color=0x00AAFF)
+        embed = discord.Embed(title="🛡️ Anti-Spam Configuration",
+                              description="Current anti-spam settings",
+                              color=0x00AAFF)
 
         embed.add_field(
             name="📏 Message Length",
@@ -6136,24 +6191,25 @@ async def configure_antispam(ctx, setting: Optional[str] = None, value: Optional
             inline=True)
 
         embed.add_field(
-            name="🔄 Similarity Check", 
-            value=f"Max similar: {ctx.bot.config.max_similar_messages} messages",
+            name="🔄 Similarity Check",
+            value=
+            f"Max similar: {ctx.bot.config.max_similar_messages} messages",
             inline=True)
 
         embed.add_field(
             name="⚡ Frequency Limit",
-            value=f"Max: {ctx.bot.config.message_frequency_limit} messages/2min",
+            value=
+            f"Max: {ctx.bot.config.message_frequency_limit} messages/2min",
             inline=True)
 
-        embed.add_field(
-            name="⏰ XP Cooldown",
-            value=f"{ctx.bot.config.xp_cooldown_seconds} seconds",
-            inline=True)
+        embed.add_field(name="⏰ XP Cooldown",
+                        value=f"{ctx.bot.config.xp_cooldown_seconds} seconds",
+                        inline=True)
 
         embed.add_field(
             name="🔧 Usage",
             value=f"`{ctx.bot.config.prefix}antispam <setting> <value>`\n"
-                  f"Settings: {', '.join(valid_settings.keys())}",
+            f"Settings: {', '.join(valid_settings.keys())}",
             inline=False)
 
         await ctx.bot.safe_send_message(ctx.channel, embed=embed)
@@ -6169,7 +6225,7 @@ async def configure_antispam(ctx, setting: Optional[str] = None, value: Optional
 
     if value is None:
         embed = discord.Embed(
-            title="❌ Missing Value", 
+            title="❌ Missing Value",
             description=f"Please provide a value for {setting}",
             color=0xFF0000)
         await ctx.bot.safe_send_message(ctx.channel, embed=embed)
@@ -6182,12 +6238,14 @@ async def configure_antispam(ctx, setting: Optional[str] = None, value: Optional
 
     embed = discord.Embed(
         title="✅ Anti-Spam Setting Updated",
-        description=f"**{setting.title()}** changed from `{old_value}` to `{value}`",
+        description=
+        f"**{setting.title()}** changed from `{old_value}` to `{value}`",
         color=0x00FF00)
 
     embed.add_field(
         name="⚠️ Note",
-        value="This change is temporary. Update environment variables for permanent change.",
+        value=
+        "This change is temporary. Update environment variables for permanent change.",
         inline=False)
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
@@ -6581,43 +6639,44 @@ def main():
 
     bot = ImmortalBeastsBot(config)
 
-    # ❌ REMOVE ALL OF THESE:
-    #bot.add_command(catch_beast)
-    #bot.add_command(daily_stone_reward)
-    #bot.add_command(adopt_beast)
-    #bot.add_command(show_beasts)
-    #bot.add_command(help_command)
-    #bot.add_command(beast_info)
-    #bot.add_command(set_active_beast)
-    #bot.add_command(show_balance)
-    #bot.add_command(battle_command)
-    #bot.add_command(adopt_legend_beast)
-    #bot.add_command(adopt_mythic_beast)
-    #bot.add_command(adoption_status)
-    #bot.add_command(force_spawn)
-    #bot.add_command(spawn_info)
-    #bot.add_command(next_spawn_time)
-    #bot.add_command(backup_status)
-    #bot.add_command(manual_backup)
-    #bot.add_command(clean_backups)
-    #bot.add_command(set_spawn_channel)
-    #bot.add_command(remove_spawn_channel)
-    #bot.add_command(show_channel_config)
-    #bot.add_command(sacrifice_beast)
-    #bot.add_command(release_beast)
-    #bot.add_command(fix_xp_cooldown)
-    #bot.add_command(check_cooldown)
-    #bot.add_command(ping_command)
-    #bot.add_command(heal_beast)
-    #bot.add_command(heal_all_beasts)
-    #bot.add_command(manual_cloud_backup)
-    #bot.add_command(restore_from_cloud)
-    #bot.add_command(check_user_beasts)
-    #bot.add_command(user_stats)
-    #bot.add_command(leaderboard)
-    #bot.add_command(server_beast_stats)
-    #bot.add_command(xp_config)
-    #bot.add_command(xp_status)
+    bot.add_command(catch_beast)
+    bot.add_command(daily_stone_reward)
+    bot.add_command(adopt_beast)
+    bot.add_command(show_beasts)
+    bot.add_command(help_command)
+    bot.add_command(beast_info)
+    bot.add_command(set_active_beast)
+    bot.add_command(show_balance)
+    bot.add_command(battle_command)
+    bot.add_command(adopt_legend_beast)
+    bot.add_command(adopt_mythic_beast)
+    bot.add_command(adoption_status)
+    bot.add_command(force_spawn)
+    bot.add_command(spawn_info)
+    bot.add_command(next_spawn_time)
+    bot.add_command(backup_status)
+    bot.add_command(manual_backup)
+    bot.add_command(clean_backups)
+    bot.add_command(set_spawn_channel)
+    bot.add_command(remove_spawn_channel)
+    bot.add_command(show_channel_config)
+    bot.add_command(sacrifice_beast)
+    bot.add_command(release_beast)
+    bot.add_command(fix_xp_cooldown)
+    bot.add_command(check_cooldown)
+    bot.add_command(ping_command)
+    bot.add_command(heal_beast)
+    bot.add_command(heal_all_beasts)
+    bot.add_command(manual_cloud_backup)
+    bot.add_command(restore_from_cloud)
+    bot.add_command(check_user_beasts)
+    bot.add_command(user_stats)
+    bot.add_command(leaderboard)
+    bot.add_command(server_beast_stats)
+    bot.add_command(xp_config)
+    bot.add_command(xp_status)
+    bot.add_command(remove_xp_channel)
+    bot.add_command(configure_antispam)
 
     try:
         bot.run(config.token)

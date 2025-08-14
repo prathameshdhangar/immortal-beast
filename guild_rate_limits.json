@@ -1,0 +1,10 @@
+{
+  "1393074128105504799": {
+    "xp_cooldown": 60,
+    "daily_stones_cooldown": 86400,
+    "beast_adoption_cooldown": 172800,
+    "max_catch_attempts": 3,
+    "api_requests_per_minute": 60,
+    "battle_timeout": 30
+  }
+}
