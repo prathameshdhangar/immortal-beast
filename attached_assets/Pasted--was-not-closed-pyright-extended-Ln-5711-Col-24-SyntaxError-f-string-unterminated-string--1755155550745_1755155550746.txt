@@ -1,0 +1,87 @@
+"(" was not closed
+(pyright-extended)
+Ln 5711, Col 24
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 5714, Col 21
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 5714, Col 24
+SyntaxError: Expected ',', found indent
+(pyright-extended)
+Ln 5715, Col 1
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5715, Col 19
+"Victory" is not defined
+(pyright-extended)
+Ln 5715, Col 23
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 5715, Col 62
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5715, Col 62
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5716, Col 19
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 5716, Col 76
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5716, Col 76
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5717, Col 19
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 5717, Col 29
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5717, Col 29
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5718, Col 19
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5718, Col 100
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 5718, Col 100
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5719, Col 19
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 5719, Col 21
+SyntaxError: Expected FStringEnd, found newline
+(pyright-extended)
+Ln 5719, Col 24
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5719, Col 24
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5720, Col 19
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 5720, Col 65
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5720, Col 65
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5721, Col 19
+SyntaxError: Expected an expression
+(pyright-extended)
+Ln 5721, Col 73
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5721, Col 73
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 5722, Col 19
+SyntaxError: Expected ',', found newline
+(pyright-extended)
+Ln 5722, Col 26

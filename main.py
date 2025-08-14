@@ -5720,8 +5720,8 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
                   f"Participation XP: {xp_info['loser_xp']}\n" +
                   f"New Level: {xp_info['loser_beast'].stats.level}\n" +
                   f"```",
-            inline=False
-        )
+            inline=False)
+
 
         # Level up notifications
         level_up_messages = []
