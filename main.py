@@ -221,7 +221,8 @@ class BotConfig(BaseModel):
         if os.getenv('PORT'):  # Production (Heroku/Railway)
             backup_retention = 3
             backup_interval = 12
-            database_path = os.getenv('DATABASE_PATH', 'data/immortal_beasts.db')
+            database_path = os.getenv('DATABASE_PATH',
+                                      'data/immortal_beasts.db')
         else:  # Development
             backup_retention = 10
             backup_interval = 6
@@ -799,7 +800,9 @@ class SQLiteDatabase(DatabaseInterface):
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         except PermissionError as e:
-            print(f"Warning: Could not create directory {self.db_path.parent}: {e}")
+            print(
+                f"Warning: Could not create directory {self.db_path.parent}: {e}"
+            )
             # The directory might already exist or be created by the platform
             pass
 
@@ -2153,7 +2156,8 @@ class ImmortalBeastsBot(commands.Bot):
                          help_command=None)
 
         self.api_rate_limiter = RateLimiter(
-            max_calls=30, period=60)  # Reduced from 60 to 30 requests per minute
+            max_calls=30,
+            period=60)  # Reduced from 60 to 30 requests per minute
         #self.activity_tracker = UserActivityTracker()
         self.config = config
         self.db: DatabaseInterface = SQLiteDatabase(config.database_path)
@@ -2176,10 +2180,10 @@ class ImmortalBeastsBot(commands.Bot):
         self.logger = logging.getLogger(__name__)
 
     async def safe_api_call(self,
-                             api_func,
-                             guild_id: Optional[int] = None,
-                             *args,
-                             **kwargs):
+                            api_func,
+                            guild_id: Optional[int] = None,
+                            *args,
+                            **kwargs):
         """Enhanced safe API call with better rate limiting"""
 
         # Use guild-specific rate limiter if guild_id is provided
@@ -2201,7 +2205,8 @@ class ImmortalBeastsBot(commands.Bot):
                 wait_time = await rate_limiter.wait_if_needed()
                 if wait_time:
                     self.logger.info(
-                        f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s")
+                        f"Rate limited (Guild: {guild_id}), waited {wait_time:.1f}s"
+                    )
 
                 result = await api_func(*args, **kwargs)
                 return result
@@ -2211,7 +2216,8 @@ class ImmortalBeastsBot(commands.Bot):
                     # EXPONENTIAL BACKOFF - much more conservative
                     wait = min(300, 30 * (2**attempt))  # Cap at 5 minutes
                     self.logger.warning(
-                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})")
+                        f"429 error, backing off for {wait} seconds (attempt {attempt+1})"
+                    )
                     await asyncio.sleep(wait)
                 else:
                     self.logger.error(f"API call failed: {e}")
@@ -2223,9 +2229,6 @@ class ImmortalBeastsBot(commands.Bot):
         self.logger.error("Max retries exceeded for API call")
         return None
 
-
-
-    
     async def safe_send_message(self, channel, *args, **kwargs):
         """Send message with rate limiting"""
         guild_id = getattr(channel, 'guild', None)
@@ -2249,6 +2252,37 @@ class ImmortalBeastsBot(commands.Bot):
         return await self.safe_api_call(message.edit, guild_id, *args,
                                         **kwargs)
 
+    async def auto_select_active_beast(
+            self, user_id: int) -> Optional[Tuple[int, Beast]]:
+        """Automatically select the best beast as active (fallback only)"""
+        user_beasts = await self.db.get_user_beasts(user_id)
+
+        if not user_beasts:
+            return None
+
+        # If only 1 beast, select it
+        if len(user_beasts) == 1:
+            return user_beasts[0]
+
+        # Find highest rarity
+        max_rarity = max(beast.rarity.value for _, beast in user_beasts)
+
+        # Filter for highest rarity beasts
+        highest_rarity_beasts = [(beast_id, beast)
+                                 for beast_id, beast in user_beasts
+                                 if beast.rarity.value == max_rarity]
+
+        # If only one of highest rarity, select it
+        if len(highest_rarity_beasts) == 1:
+            return highest_rarity_beasts[0]
+
+        # Multiple of same highest rarity - select most powerful
+        # Primary: Power level, Secondary: Level, Tertiary: Beast ID (for consistency)
+        best_beast = max(highest_rarity_beasts,
+                         key=lambda x: (x[1].power_level, x[1].stats.level, x))
+
+        return best_beast
+
     async def setup_hook(self):
         """Enhanced setup with automatic restoration - MESSAGE XP ONLY"""
         # Check if database exists, if not try to restore from cloud
@@ -2264,7 +2298,8 @@ class ImmortalBeastsBot(commands.Bot):
                     "No cloud backup found, starting with fresh database")
 
         startup_delay = random.uniform(5, 15)  # Random delay 5-15 seconds
-        self.logger.info(f"Waiting {startup_delay:.1f}s before initializing...")
+        self.logger.info(
+            f"Waiting {startup_delay:.1f}s before initializing...")
         await asyncio.sleep(startup_delay)
 
         await self.db.initialize()
@@ -2297,28 +2332,34 @@ class ImmortalBeastsBot(commands.Bot):
         await self.change_presence(activity=activity)
 
     async def on_message(self, message):
-        """Handle messages for XP gain - MESSAGE ONLY"""
+        """Handle messages for XP gain with smart auto-selection fallback"""
         if message.author.bot:
             await self.process_commands(message)
             return
 
-        # Handle message-based XP only (removed activity tracking)
+        # Handle message-based XP only
         if (message.channel.id in self.config.xp_chat_channel_ids
                 and hasattr(message, 'content') and len(message.content) > 3):
 
             user = await self.get_or_create_user(message.author.id,
                                                  str(message.author))
 
+            # AUTO-SELECT ACTIVE BEAST if none set (fallback only)
             if not user.active_beast_id:
-                # Don't spam - only remind occasionally (5% chance)
-                if random.randint(1, 20) == 1:
-                    await message.channel.send(
-                        f"💡 {message.author.mention} Set an active beast to gain XP! Use `{self.config.prefix}active <beast_id>`",
-                        delete_after=10  # Auto-delete to avoid clutter
+                best_beast = await self.auto_select_active_beast(user.user_id)
+                if best_beast:
+                    beast_id, beast = best_beast
+                    user.active_beast_id = beast_id
+                    await self.db.update_user(user)
+
+                    # Optional: Log for debugging (silent to users)
+                    self.logger.info(
+                        f"Auto-selected active beast for {message.author}: {beast.name} (ID: {beast_id})"
                     )
-            else:
-                await self.handle_message_xp_gain(message
-                                                  )  # Updated method name
+
+            # Process XP if active beast is set (either manual or auto-selected)
+            if user.active_beast_id:
+                await self.handle_message_xp_gain(message)
 
         await self.process_commands(message)
 
@@ -3143,9 +3184,21 @@ async def sacrifice_beast(ctx, beast_id: int):
                                                        active_beast.rarity)
                 await ctx.bot.db.update_beast(active_beast_id, active_beast)
 
-            # Clear active beast if it was sacrificed
+            # Clear active beast if it was sacrificed and auto-select new one
+            new_active_info = None
             if user.active_beast_id == beast_id:
-                user.active_beast_id = None
+                # Auto-select new active beast from remaining collection
+                new_active = await ctx.bot.auto_select_active_beast(
+                    user.user_id)
+                user.active_beast_id = new_active[0] if new_active else None
+                if new_active:
+                    _, new_beast = new_active
+                    new_active_info = {
+                        'name': new_beast.name,
+                        'emoji': new_beast.rarity.emoji,
+                        'level': new_beast.stats.level,
+                        'power': new_beast.power_level
+                    }
 
             await ctx.bot.db.update_user(user)
 
@@ -3235,6 +3288,15 @@ async def sacrifice_beast(ctx, beast_id: int):
                 f"{collection_visual}\n"
                 f"📦 **Your collection: {remaining_beasts} loyal companions remain**",
                 inline=False)
+            # Auto-selection notification (add this AFTER the Collection Status field)
+            if new_active_info:
+                embed.add_field(
+                    name="🔄 **AUTO-SELECTION**",
+                    value=
+                    f"New active beast: **{new_active_info['name']}** {new_active_info['emoji']}\n"
+                    f"Level {new_active_info['level']} | Power: {new_active_info['power']:,}\n"
+                    f"🎯 Your strongest companion automatically steps forward!",
+                    inline=False)
 
             # Epic footer
             embed.add_field(
@@ -3441,7 +3503,22 @@ async def release_beast(ctx, beast_id: int):
             success = await ctx.bot.db.delete_beast(beast_id)
             if success:
                 if user.active_beast_id == beast_id:
-                    user.active_beast_id = None
+                    # Auto-select new active beast from remaining collection
+                    new_active = await ctx.bot.auto_select_active_beast(
+                        user.user_id)
+                    user.active_beast_id = new_active[0] if new_active else None
+                    await ctx.bot.db.update_user(user)
+
+                    if new_active:
+                        _, new_beast = new_active
+                        # Add to your existing Beautiful success embed
+                        embed.add_field(
+                            name="🔄 **SANCTUARY AUTO-SELECTION**",
+                            value=
+                            f"New guardian chosen: **{new_beast.name}** {new_beast.rarity.emoji}\n"
+                            f"🛡️ Your strongest companion steps forward to serve",
+                            inline=False)
+                else:
                     await ctx.bot.db.update_user(user)
 
                 # Beautiful success embed
@@ -4426,11 +4503,71 @@ async def beast_info(ctx, beast_id: int):
 
 
 @commands.command(name='active')
-async def set_active_beast(ctx, beast_id: int):
-    """Set a beast as your active beast for XP gain"""
+async def set_active_beast(ctx, beast_id: Optional[int] = None):
+    """Set a beast as your active beast for XP gain, or see current active beast"""
     user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
 
+    # If no beast_id provided, show current active + auto-selection info
+    if beast_id is None:
+        if not user_beasts:
+            embed = discord.Embed(
+                title="📦 No Beasts Available",
+                description=
+                "You don't have any beasts yet! Use `!adopt` or catch wild beasts.",
+                color=0xFF0000)
+        elif not user.active_beast_id:
+            # Show what would be auto-selected
+            auto_beast = await ctx.bot.auto_select_active_beast(ctx.author.id)
+            if auto_beast:
+                beast_id_auto, beast = auto_beast
+                embed = discord.Embed(
+                    title="🤖 No Active Beast Set",
+                    description=
+                    (f"**Auto-Selection Available:** {beast.name} {beast.rarity.emoji}\n"
+                     f"This beast will be automatically selected when you chat in XP channels.\n\n"
+                     f"Use `!active {beast_id_auto}` to set it manually now, or chat to auto-select!"
+                     ),
+                    color=0xFFAA00)
+            else:
+                embed = discord.Embed(
+                    title="❌ No Active Beast",
+                    description="No beasts available for selection.",
+                    color=0xFF0000)
+        else:
+            # Show current active beast
+            embed = discord.Embed(
+                title="❌ No Active Beast Found",
+                description=
+                "Your active beast ID doesn't match any beast in your collection.",
+                color=0xFF0000)
+
+            for bid, beast in user_beasts:
+                if bid == user.active_beast_id:
+                    embed = discord.Embed(
+                        title="🟢 Current Active Beast",
+                        description=f"**{beast.name}** {beast.rarity.emoji}",
+                        color=beast.rarity.color)
+                    embed.add_field(name="Beast ID",
+                                    value=f"#{bid}",
+                                    inline=True)
+                    embed.add_field(name="Level",
+                                    value=beast.stats.level,
+                                    inline=True)
+                    embed.add_field(name="Power",
+                                    value=beast.power_level,
+                                    inline=True)
+                    break
+
+        embed.add_field(name="💡 Usage",
+                        value=(f"`!active <beast_id>` - Set specific beast\n"
+                               f"`!beasts` - View all your beasts"),
+                        inline=False)
+
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Rest of the existing manual selection logic...
     target_beast = None
     for bid, beast in user_beasts:
         if bid == beast_id:
@@ -4450,8 +4587,8 @@ async def set_active_beast(ctx, beast_id: int):
 
     embed = discord.Embed(
         title="🟢 Active Beast Set!",
-        description=f"**{target_beast.name}** is now your active beast!\n"
-        f"It will gain XP when you chat in XP channels",
+        description=(f"**{target_beast.name}** is now your active beast!\n"
+                     f"It will gain XP when you chat in XP channels"),
         color=target_beast.rarity.color)
     embed.add_field(
         name="Beast",
@@ -4461,6 +4598,11 @@ async def set_active_beast(ctx, beast_id: int):
     embed.add_field(name="XP per Message",
                     value=f"+{ctx.bot.config.xp_per_message}",
                     inline=True)
+    embed.add_field(
+        name="🤖 Auto-Selection",
+        value=
+        "Manual selection overrides auto-selection. Your choice will be remembered!",
+        inline=False)
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
@@ -6709,6 +6851,7 @@ def main():
                 time.sleep(wait_time)
             else:
                 print("Max retries exceeded. Bot failed to start.")
+
 
 if __name__ == "__main__":
     if os.getenv('PORT'):  # Running on Render
