@@ -221,10 +221,7 @@ class BotConfig(BaseModel):
         if os.getenv('PORT'):  # Production (Heroku/Railway)
             backup_retention = 3
             backup_interval = 12
-            database_path = os.getenv(
-                'DATABASE_PATH',
-                '/opt/render/project/src/data/immortal_beasts.db'
-            )  # Production path
+            database_path = os.getenv('DATABASE_PATH', 'data/immortal_beasts.db')
         else:  # Development
             backup_retention = 10
             backup_interval = 6
@@ -799,7 +796,12 @@ class SQLiteDatabase(DatabaseInterface):
 
     def __init__(self, db_path: str):
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            print(f"Warning: Could not create directory {self.db_path.parent}: {e}")
+            # The directory might already exist or be created by the platform
+            pass
 
     async def initialize(self) -> None:
         """Initialize database schema"""
