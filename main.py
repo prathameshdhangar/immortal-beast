@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, Union
 import sqlite3
 import time
 import functools
@@ -726,6 +726,8 @@ class User:
     total_battles: int = 0
     wins: int = 0
     losses: int = 0
+    battle_xp_day: Optional[str] = None  # 'YYYY-MM-DD'
+    battle_xp_count: int = 0
     created_at: Optional[datetime.datetime] = None  # ✅ FIXED: Added Optional
     has_used_adopt_legend: bool = False
     has_used_adopt_mythic: bool = False
@@ -852,6 +854,18 @@ class SQLiteDatabase(DatabaseInterface):
                 CREATE INDEX IF NOT EXISTS idx_battle_history_users ON battle_history(user1_id, user2_id);
                 CREATE INDEX IF NOT EXISTS idx_users_active_beast ON users(active_beast_id);
             """)
+            # Add columns if they don't exist (safe on repeated runs)
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN battle_xp_day TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN battle_xp_count INTEGER DEFAULT 0"
+                )
+            except Exception:
+                pass
+
             conn.commit()
         finally:
             conn.close()
@@ -888,7 +902,15 @@ class SQLiteDatabase(DatabaseInterface):
                     has_used_adopt_legend=bool(row['has_used_adopt_legend']),
                     has_used_adopt_mythic=bool(row['has_used_adopt_mythic']),
                     created_at=datetime.datetime.fromisoformat(
-                        row['created_at']))
+                        row['created_at']),
+                    # NEW (safe lookups; SQLite row always has keys after ALTER, but default if NULL)
+                    battle_xp_day=row['battle_xp_day']
+                    if 'battle_xp_day' in row.keys() else None,
+                    battle_xp_count=row['battle_xp_count']
+                    if 'battle_xp_count' in row.keys()
+                    and row['battle_xp_count'] is not None else 0,
+                )
+
             return None
         finally:
             conn.close()
@@ -902,16 +924,17 @@ class SQLiteDatabase(DatabaseInterface):
                 created_at_str = user.created_at.isoformat(
                 ) if user.created_at else datetime.datetime.now().isoformat()
 
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR IGNORE INTO users 
                     (user_id, username, spirit_stones, total_catches, total_battles, wins, losses, 
-                     has_used_adopt_legend, has_used_adopt_mythic, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     has_used_adopt_legend, has_used_adopt_mythic, created_at, battle_xp_day, battle_xp_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (user.user_id, user.username, user.spirit_stones,
                       user.total_catches, user.total_battles, user.wins,
                       user.losses, user.has_used_adopt_legend,
-                      user.has_used_adopt_mythic,
-                      created_at_str))  # ✅ Use safe string
+                      user.has_used_adopt_mythic, created_at_str,
+                      user.battle_xp_day, user.battle_xp_count))
                 conn.commit()
                 return True
             finally:
@@ -930,16 +953,17 @@ class SQLiteDatabase(DatabaseInterface):
                     UPDATE users SET 
                     username=?, spirit_stones=?, last_daily=?, last_adopt=?, last_xp_gain=?,
                     active_beast_id=?, total_catches=?, total_battles=?, wins=?, losses=?,
-                    has_used_adopt_legend=?, has_used_adopt_mythic=?
+                    has_used_adopt_legend=?, has_used_adopt_mythic=?,
+                    battle_xp_day=?, battle_xp_count=?
                     WHERE user_id=?
                 """, (user.username, user.spirit_stones,
                       user.last_daily.isoformat() if user.last_daily else None,
                       user.last_adopt.isoformat() if user.last_adopt else None,
-                      user.last_xp_gain.isoformat()
-                      if user.last_xp_gain else None, user.active_beast_id,
-                      user.total_catches, user.total_battles, user.wins,
-                      user.losses, user.has_used_adopt_legend,
-                      user.has_used_adopt_mythic, user.user_id))
+                      user.last_xp_gain.isoformat() if user.last_xp_gain else
+                      None, user.active_beast_id, user.total_catches,
+                      user.total_battles, user.wins, user.losses,
+                      user.has_used_adopt_legend, user.has_used_adopt_mythic,
+                      user.battle_xp_day, user.battle_xp_count, user.user_id))
                 conn.commit()
                 return True
             finally:
@@ -2097,7 +2121,7 @@ class UserRoleManager:
 async def select_beast_for_battle(
         ctx,
         user: discord.Member,
-        beasts: List[Tuple[int, Beast]],
+        beasts: List[Tuple[int, Beast]],  # Fix this type
         pronoun: str = "your") -> Optional[Tuple[int, Beast]]:
     """Helper function to let a user select a beast for battle"""
     if not beasts:
@@ -2143,6 +2167,17 @@ async def select_beast_for_battle(
     except asyncio.TimeoutError:
         await message.delete()
         return None
+
+
+def _today_str():
+    return datetime.datetime.now().strftime('%Y-%m-%d')
+
+
+def _check_and_reset_battle_day(user: User):
+    today = _today_str()
+    if user.battle_xp_day != today:
+        user.battle_xp_day = today
+        user.battle_xp_count = 0
 
 
 class ImmortalBeastsBot(commands.Bot):
@@ -5296,7 +5331,8 @@ async def server_beast_stats(ctx):
 
         # Get detailed beast data for rarity breakdown
         all_beast_data = []
-        user_cursor = conn = ctx.bot.db._get_connection()
+        conn = ctx.bot.db._get_connection()
+        user_cursor = conn.execute(...)
         user_rows = conn.execute('SELECT user_id FROM users').fetchall()
 
         rarity_counts = {rarity.name: 0 for rarity in BeastRarity}
@@ -5694,34 +5730,71 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         if winner_user == ctx.author:
             winner_beast_obj = challenger_beast[1]
             loser_beast_obj = opponent_beast[1]
-            winner_beast_id = challenger_beast[0]
-            loser_beast_id = opponent_beast[0]
+            winner_beast_id = challenger_beast
+            loser_beast_id = opponent_beast
         else:
             winner_beast_obj = opponent_beast[1]
             loser_beast_obj = challenger_beast[1]
-            winner_beast_id = opponent_beast[0]
-            loser_beast_id = challenger_beast[0]
+            winner_beast_id = opponent_beast
+            loser_beast_id = challenger_beast
 
-        # Calculate XP for both participants
+        # Reset daily counters if day changed
+        _check_and_reset_battle_day(challenger_user)
+        _check_and_reset_battle_day(opponent_user)
+
+        # Compute XP as usual
         winner_xp = calculate_enhanced_battle_xp(winner_beast_obj,
                                                  loser_beast_obj,
                                                  battle_result['turns'],
                                                  is_winner=True)
-
         loser_xp = calculate_enhanced_battle_xp(loser_beast_obj,
                                                 winner_beast_obj,
                                                 battle_result['turns'],
                                                 is_winner=False)
 
-        # Apply XP to beasts
-        winner_levelups = winner_beast_obj.stats.add_exp(
-            winner_xp, winner_beast_obj.rarity)
-        loser_levelups = loser_beast_obj.stats.add_exp(loser_xp,
-                                                       loser_beast_obj.rarity)
+        # Enforce hard cap = 10
+        chall_cap_reached = challenger_user.battle_xp_count >= 10
+        opp_cap_reached = opponent_user.battle_xp_count >= 10
+
+        # Zero out based on who is winner/loser
+        if winner_user == ctx.author and chall_cap_reached:
+            winner_xp = 0
+        elif winner_user == opponent and opp_cap_reached:
+            winner_xp = 0
+
+        if winner_user == ctx.author:
+            # opponent is loser
+            if opp_cap_reached:
+                loser_xp = 0
+        else:
+            # challenger is loser
+            if chall_cap_reached:
+                loser_xp = 0
+
+        # Apply XP and consume daily slot only if XP>0
+        winner_levelups = []
+        loser_levelups = []
+
+        if winner_xp > 0:
+            winner_levelups = winner_beast_obj.stats.add_exp(
+                winner_xp, winner_beast_obj.rarity)
+            if winner_user == ctx.author:
+                challenger_user.battle_xp_count += 1
+            else:
+                opponent_user.battle_xp_count += 1
+
+        if loser_xp > 0:
+            loser_levelups = loser_beast_obj.stats.add_exp(
+                loser_xp, loser_beast_obj.rarity)
+            if winner_user == ctx.author:
+                opponent_user.battle_xp_count += 1
+            else:
+                challenger_user.battle_xp_count += 1
 
         # Update database with new XP and levels
-        await ctx.bot.db.update_beast(winner_beast_id, winner_beast_obj)
-        await ctx.bot.db.update_beast(loser_beast_id, loser_beast_obj)
+        await ctx.bot.db.update_beast(winner_beast_id[0], winner_beast_obj
+                                      )  # ✅ Access tuple correctly
+        await ctx.bot.db.update_beast(loser_beast_id[0], loser_beast_obj)
 
         # Store XP info for embed display
         xp_info = {
@@ -5738,18 +5811,32 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         # Handle draw case - both get participation XP
         draw_xp = 30
 
-        challenger_levelups = challenger_beast[1].stats.add_exp(
-            draw_xp, challenger_beast[1].rarity)
-        opponent_levelups = opponent_beast[1].stats.add_exp(
-            draw_xp, opponent_beast[1].rarity)
+        _check_and_reset_battle_day(challenger_user)
+        _check_and_reset_battle_day(opponent_user)
 
-        await ctx.bot.db.update_beast(challenger_beast[0], challenger_beast[1])
-        await ctx.bot.db.update_beast(opponent_beast[0], opponent_beast[1])
+        challenger_award = draw_xp if challenger_user.battle_xp_count < 10 else 0
+        opponent_award = draw_xp if opponent_user.battle_xp_count < 10 else 0
+
+        challenger_levelups = []
+        opponent_levelups = []
+
+        if challenger_award > 0:
+            challenger_levelups = challenger_beast[1].stats.add_exp(
+                challenger_award, challenger_beast[1].rarity)
+            challenger_user.battle_xp_count += 1
+
+        if opponent_award > 0:
+            opponent_levelups = opponent_beast[1].stats.add_exp(
+                opponent_award, opponent_beast[1].rarity)
+            opponent_user.battle_xp_count += 1
+
+        await ctx.bot.db.update_beast(challenger_beast, challenger_beast[1])
+        await ctx.bot.db.update_beast(opponent_beast, opponent_beast[1])
 
         xp_info = {
             'draw': True,
-            'challenger_xp': draw_xp,
-            'opponent_xp': draw_xp,
+            'challenger_xp': challenger_award,
+            'opponent_xp': opponent_award,
             'challenger_levelups': challenger_levelups,
             'opponent_levelups': opponent_levelups
         }
