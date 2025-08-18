@@ -3144,7 +3144,7 @@ async def sacrifice_beast(ctx, beast_id: int):
             inline=False)
         embed.add_field(
             name="🔍 Beast Registry Search",
-            value=(f"```
+            value=(f"```\n"
                    f"- Beast ID: #{beast_id}\n"
                    f"- Owner: {ctx.author.display_name}\n"
                    f"- Status: NOT FOUND\n"
@@ -3173,7 +3173,7 @@ async def sacrifice_beast(ctx, beast_id: int):
             inline=False)
         embed.add_field(
             name="🟢 Active Beast Status",
-            value=(f"```
+            value=(f"```\n"
                    f"Protected Beast: {target_beast.name}\n"
                    f"Beast ID: #{beast_id}\n"
                    f"Status: CURRENTLY ACTIVE\n"
@@ -3217,7 +3217,7 @@ async def sacrifice_beast(ctx, beast_id: int):
     embed.add_field(
         name="🐉 SACRIFICE CANDIDATE",
         value=(f"### {rarity_glow} {target_beast.name} {rarity_glow}\n"
-               f"```
+               f"```\n"
                f"Beast ID: #{beast_id}\n"
                f"Rarity: {target_beast.rarity.name.title()} {target_beast.rarity.emoji}\n"
                f"Level: {target_beast.stats.level}\n"
@@ -3230,7 +3230,7 @@ async def sacrifice_beast(ctx, beast_id: int):
     xp_value_bars = "⚡" * min(8, sacrifice_xp // 500) or "⬛"
     embed.add_field(
         name="💰 SHRINE REWARDS",
-        value=(f"```
+        value=(f"```\n"
                f"Beast Stones: {beast_stones_reward:,}\n"
                f"Value Tier:  {stone_value_bars}\n"
                f"Formula:     (Level × 10) + (Rarity × 50)\n"
@@ -3240,7 +3240,7 @@ async def sacrifice_beast(ctx, beast_id: int):
     if active_beast:
         embed.add_field(
             name="📈 SOUL TRANSFER",
-            value=(f"```
+            value=(f"```\n"
                    f"Experience:  {sacrifice_xp:,} XP\n"
                    f"Power Tier:  {xp_value_bars}\n"
                    f"Recipient:   {active_beast.name}\n"
@@ -3250,7 +3250,7 @@ async def sacrifice_beast(ctx, beast_id: int):
     else:
         embed.add_field(
             name="💀 LOST ESSENCE",
-            value=(f"```
+            value=(f"```\n"
                    f"- Experience: {sacrifice_xp:,} XP\n"
                    f"- Status: NO ACTIVE BEAST\n"
                    f"- Result: ESSENCE DISPERSES\n"
@@ -3260,26 +3260,26 @@ async def sacrifice_beast(ctx, beast_id: int):
 
     embed.add_field(
         name="⚠️ RITUAL WARNING",
-        value=("```
-               "- Beast Stones: PERMANENT GAIN\n"
+        value=(f"```\n"
+               f"- Beast Stones: PERMANENT GAIN\n"
                f"{'+ Soul Transfer: TO ACTIVE BEAST' if active_beast else '- Soul Energy: LOST FOREVER'}\n"
-               "- Beast Loss: IRREVERSIBLE\n"
-               "- Shrine Decision: FINAL\n"
-               "```"),
+               f"- Beast Loss: IRREVERSIBLE\n"
+               f"- Shrine Decision: FINAL\n"
+               f"```"),
         inline=False)
     embed.add_field(
         name="🔥 SHRINE RITUAL COMMANDS",
-        value=("### ✅ COMPLETE SACRIFICE\n"
-               "```
-               "▶ Accept the shrine's power\n"
-               "▶ Claim beast stones\n"
+        value=(f"### ✅ COMPLETE SACRIFICE\n"
+               f"```\n"
+               f"▶ Accept the shrine's power\n"
+               f"▶ Claim beast stones\n"
                f"{'▶ Transfer soul to active beast' if active_beast else '▶ Release soul to the void'}\n"
-               "```\n"
-               "### ❌ ABANDON RITUAL\n"
-               "```
-               "▶ Preserve your beast\n"
-               "▶ Leave shrine unchanged\n"
-               "```"),
+               f"```\n"
+               f"### ❌ ABANDON RITUAL\n"
+               f"```\n"
+               f"▶ Preserve your beast\n"
+               f"▶ Leave shrine unchanged\n"
+               f"```"),
         inline=False)
     embed.add_field(
         name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -3314,18 +3314,51 @@ async def sacrifice_beast(ctx, beast_id: int):
                     inline=False)
                 error_embed.add_field(
                     name="🔧 System Error",
-                    value="``````",
+                    value="```\nDatabase operation failed\nPlease try again\n```",
                     inline=False)
                 await ctx.bot.safe_edit_message(message, embed=error_embed)
                 return
 
-            # Add rewards, transfer XP, do stat boosts if allowed, update user/beasts accordingly...
+            # Add rewards and process sacrifice
+            user.spirit_stones += beast_stones_reward
+            
+            # Transfer XP to active beast if available
+            if active_beast:
+                level_ups = active_beast.stats.add_exp(sacrifice_xp, active_beast.rarity)
+                await ctx.bot.db.update_beast(user.active_beast_id, active_beast)
+            
+            await ctx.bot.db.update_user(user)
 
-            # Success feedback embed creation code (not repeated here to save space, see sample output).
-
+            # Success feedback embed
+            success_embed = discord.Embed(color=0x00FF00)
+            success_embed.add_field(
+                name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                value="# ✅ ⚡ SACRIFICE COMPLETE ⚡ ✅\n"
+                      "## 🌟 SHRINE ACCEPTS OFFERING 🌟\n"
+                      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                inline=False)
+            success_embed.add_field(
+                name="💰 Rewards Granted",
+                value=f"💎 **{beast_stones_reward:,} Beast Stones** added!\n"
+                      f"⚡ **{sacrifice_xp:,} XP** {'transferred to active beast' if active_beast else 'dispersed'}",
+                inline=False)
+            
             await ctx.bot.safe_edit_message(message, embed=success_embed)
         else:
-            # Ritual abandoned (similar embed logic as above)
+            # Ritual abandoned
+            abandoned_embed = discord.Embed(color=0x808080)
+            abandoned_embed.add_field(
+                name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                value="# 🛡️ ⚡ RITUAL ABANDONED ⚡ 🛡️\n"
+                      "## 💙 BEAST PRESERVED 💙\n"
+                      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                inline=False)
+            abandoned_embed.add_field(
+                name="🌙 Wise Choice",
+                value=f"**{target_beast.name}** remains safely in your collection.\n"
+                      "The shrine respects your decision.",
+                inline=False)
+            
             await ctx.bot.safe_edit_message(message, embed=abandoned_embed)
     except asyncio.TimeoutError:
         timeout_embed = discord.Embed(color=0x616161)
@@ -3337,7 +3370,7 @@ async def sacrifice_beast(ctx, beast_id: int):
             inline=False)
         timeout_embed.add_field(
             name="⏰ Time's Judgment",
-            value=(f"```
+            value=(f"```\n"
                    f"Ritual Duration: 30 seconds\n"
                    f"Response: NONE RECEIVED\n"
                    f"Shrine Status: DORMANT\n"
