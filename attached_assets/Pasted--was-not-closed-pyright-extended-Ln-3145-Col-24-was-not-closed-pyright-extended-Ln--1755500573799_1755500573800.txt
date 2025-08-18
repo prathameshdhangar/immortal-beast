@@ -1,0 +1,245 @@
+"(" was not closed
+(pyright-extended)
+Ln 3145, Col 24
+"(" was not closed
+(pyright-extended)
+Ln 3147, Col 19
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3147, Col 22
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3147, Col 25
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3148, Col 20
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3153, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3153, Col 25
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3153, Col 26
+"(" was not closed
+(pyright-extended)
+Ln 3174, Col 24
+"(" was not closed
+(pyright-extended)
+Ln 3176, Col 19
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3176, Col 22
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3176, Col 25
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3177, Col 20
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3182, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3182, Col 25
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3182, Col 26
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3196, Col 5
+"(" was not closed
+(pyright-extended)
+Ln 3217, Col 20
+"(" was not closed
+(pyright-extended)
+Ln 3219, Col 15
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3220, Col 18
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3220, Col 21
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3221, Col 16
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3228, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3228, Col 21
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3228, Col 22
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3229, Col 5
+"(" was not closed
+(pyright-extended)
+Ln 3231, Col 20
+"(" was not closed
+(pyright-extended)
+Ln 3233, Col 15
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3233, Col 18
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3233, Col 21
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3234, Col 16
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3239, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3239, Col 20
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3239, Col 21
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3240, Col 5
+"(" was not closed
+(pyright-extended)
+Ln 3241, Col 24
+"(" was not closed
+(pyright-extended)
+Ln 3243, Col 19
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3243, Col 22
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3243, Col 25
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3244, Col 20
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3249, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3249, Col 24
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3249, Col 25
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3250, Col 5
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3250, Col 9
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3250, Col 10
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3251, Col 1
+"(" was not closed
+(pyright-extended)
+Ln 3251, Col 24
+"(" was not closed
+(pyright-extended)
+Ln 3253, Col 19
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3253, Col 22
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3253, Col 25
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3254, Col 20
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3259, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3259, Col 24
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3259, Col 25
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3261, Col 5
+SyntaxError: Invalid assignment target
+(pyright-extended)
+Ln 3261, Col 5
+SyntaxError: missing closing quote in string literal
+(pyright-extended)
+Ln 3263, Col 16
+String literal is unterminated
+(pyright-extended)
+Ln 3263, Col 16
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3264, Col 16
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3269, Col 21
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3269, Col 22
+SyntaxError: Invalid assignment target
+(pyright-extended)
+Ln 3270, Col 5
+String literal is unterminated
+(pyright-extended)
+Ln 3273, Col 16
+SyntaxError: missing closing quote in string literal
+(pyright-extended)
+Ln 3273, Col 16
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3274, Col 16
+SyntaxError: missing closing quote in string literal
+(pyright-extended)
+Ln 3279, Col 16
+String literal is unterminated
+(pyright-extended)
+Ln 3279, Col 16
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3280, Col 16
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3283, Col 21
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3283, Col 22
+"success_embed" is not defined
+(pyright-extended)
+Ln 3326, Col 60
+"abandoned_embed" is not defined
+(pyright-extended)
+Ln 3329, Col 60
+"(" was not closed
+(pyright-extended)
+Ln 3338, Col 32
+"(" was not closed
+(pyright-extended)
+Ln 3340, Col 19
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3340, Col 22
+SyntaxError: f-string: unterminated string
+(pyright-extended)
+Ln 3340, Col 25
+SyntaxError: Positional argument cannot follow keyword argument
+(pyright-extended)
+Ln 3341, Col 20
+SyntaxError: Unexpected indentation
+(pyright-extended)
+Ln 3347, Col 1
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3347, Col 25
+SyntaxError: Expected a statement
+(pyright-extended)
+Ln 3347, Col 26
+SyntaxError: Expected a statement
+(pyright-extended)

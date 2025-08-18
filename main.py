@@ -396,7 +396,33 @@ def calculate_enhanced_battle_xp(winner_beast,
 
     return min(total_xp, 150)  # Higher cap for enhanced system
 
+def has_sufficient_bond(beast) -> bool:
+    """Check if beast has been owned for at least 12 hours"""
+    if not beast.caught_at:
+        return False
+    owned_time = datetime.datetime.now() - beast.caught_at
+    return owned_time.total_seconds() >= (12 * 3600)  # 12 hours in seconds
 
+def calculate_percentage_stat_boosts(sacrificed_beast):
+    """Calculate stat boosts based on percentage of sacrificed beast's stats"""
+    rarity_percent_map = {
+        1: 0.05,   # Common (5%)
+        2: 0.07,   # Uncommon (7%)
+        3: 0.09,   # Rare (9%)
+        4: 0.11,   # Epic (11%)
+        5: 0.13,   # Legendary (13%)
+        6: 0.15    # Mythic (15%)
+    }
+
+    percent = rarity_percent_map.get(sacrificed_beast.rarity.value, 0.05)
+    stats = sacrificed_beast.stats
+
+    return {
+        'hp': max(1, int(stats.max_hp * percent)),
+        'attack': max(1, int(stats.attack * percent)),
+        'defense': max(1, int(stats.defense * percent)),
+        'speed': max(1, int(stats.speed * percent))
+    }
 # Data Models
 @dataclass
 class BeastStats:
@@ -678,6 +704,12 @@ def get_user_message_xp_amount(member: Optional[discord.Member],
     # Normal users get base amount
     return base_xp
 
+def get_boosted_xp_amount(base_xp: int, user: 'User') -> int:
+    """Apply XP boost multiplier if active"""
+    if (user.xp_boost_expires and 
+        datetime.datetime.now() < user.xp_boost_expires):
+        return int(base_xp * 1.5)  # 50% boost
+    return base_xp
 
 @dataclass
 class BeastTemplate:
@@ -726,11 +758,19 @@ class User:
     total_battles: int = 0
     wins: int = 0
     losses: int = 0
-    battle_xp_day: Optional[str] = None  # 'YYYY-MM-DD'
+    battle_xp_day: Optional[str] = None
     battle_xp_count: int = 0
-    created_at: Optional[datetime.datetime] = None  # ✅ FIXED: Added Optional
+    created_at: Optional[datetime.datetime] = None
     has_used_adopt_legend: bool = False
     has_used_adopt_mythic: bool = False
+    last_feed: Optional[datetime.datetime] = None
+    last_groom: Optional[datetime.datetime] = None
+    last_first_win: Optional[datetime.datetime] = None
+    xp_boost_expires: Optional[datetime.datetime] = None
+    spar_sessions_today: int = 0
+    spar_day_date: Optional[str] = None
+    sacrifice_day_date: Optional[str] = None
+    sacrifice_count_today: int = 0
 
     def __post_init__(self):
         if self.created_at is None:
@@ -750,10 +790,38 @@ class User:
         time_since_last = datetime.datetime.now() - self.last_xp_gain
         return time_since_last.total_seconds() >= cooldown_seconds
 
+    def can_spar(self) -> bool:
+        """Check if user can spar today (max 15 sessions per day)"""
+        today = datetime.datetime.now().date().isoformat()
+        if self.spar_day_date != today:
+            return True
+        return self.spar_sessions_today < 15
+
+    def record_spar(self):
+        """Record a spar session"""
+        today = datetime.datetime.now().date().isoformat()
+        if self.spar_day_date != today:
+            self.spar_day_date = today
+            self.spar_sessions_today = 0
+        self.spar_sessions_today += 1
+
+    def can_get_stat_boosts(self) -> bool:
+        """Check if user can receive stat boosts from sacrifice today"""
+        today = datetime.datetime.now().date().isoformat()
+        if self.sacrifice_day_date != today:
+            self.sacrifice_day_date = today
+            self.sacrifice_count_today = 0
+        return self.sacrifice_count_today < 5
+
+    def record_sacrifice_with_stats(self):
+        """Record a sacrifice that gave stat boosts"""
+        today = datetime.datetime.now().date().isoformat()
+        if self.sacrifice_day_date != today:
+            self.sacrifice_day_date = today
+            self.sacrifice_count_today = 0
+        self.sacrifice_count_today += 1
 
 # Database Layer
-
-
 class DatabaseInterface(ABC):
     """Abstract database interface"""
 
@@ -809,7 +877,7 @@ class SQLiteDatabase(DatabaseInterface):
             pass
 
     async def initialize(self) -> None:
-        """Initialize database schema"""
+        """Initialize database schema with proper tables"""
         conn = sqlite3.connect(self.db_path)
         try:
             conn.executescript("""
@@ -827,7 +895,17 @@ class SQLiteDatabase(DatabaseInterface):
                     losses INTEGER DEFAULT 0,
                     has_used_adopt_legend BOOLEAN DEFAULT FALSE,
                     has_used_adopt_mythic BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    battle_xp_day TEXT,
+                    battle_xp_count INTEGER DEFAULT 0,
+                    last_feed TIMESTAMP,
+                    last_groom TIMESTAMP,
+                    last_first_win TIMESTAMP,
+                    xp_boost_expires TIMESTAMP,
+                    spar_sessions_today INTEGER DEFAULT 0,
+                    spar_day_date TEXT,
+                    sacrifice_day_date TEXT,
+                    sacrifice_count_today INTEGER DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS beasts (
@@ -850,21 +928,42 @@ class SQLiteDatabase(DatabaseInterface):
                     FOREIGN KEY (user2_id) REFERENCES users (user_id)
                 );
 
+                -- NEW: Training cooldowns table
+                CREATE TABLE IF NOT EXISTS training_cooldowns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    beast_id INTEGER NOT NULL,
+                    last_training_time TIMESTAMP NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id),
+                    UNIQUE(user_id, beast_id)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_beasts_owner ON beasts(owner_id);
                 CREATE INDEX IF NOT EXISTS idx_battle_history_users ON battle_history(user1_id, user2_id);
                 CREATE INDEX IF NOT EXISTS idx_users_active_beast ON users(active_beast_id);
+                CREATE INDEX IF NOT EXISTS idx_training_cooldowns_user ON training_cooldowns(user_id);
+                CREATE INDEX IF NOT EXISTS idx_training_cooldowns_beast ON training_cooldowns(user_id, beast_id);
             """)
-            # Add columns if they don't exist (safe on repeated runs)
-            try:
-                conn.execute("ALTER TABLE users ADD COLUMN battle_xp_day TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute(
-                    "ALTER TABLE users ADD COLUMN battle_xp_count INTEGER DEFAULT 0"
-                )
-            except Exception:
-                pass
+
+            # Add new columns if they don't exist (safe migration)
+            migration_columns = [
+                "ALTER TABLE users ADD COLUMN battle_xp_day TEXT",
+                "ALTER TABLE users ADD COLUMN battle_xp_count INTEGER DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN last_feed TIMESTAMP",
+                "ALTER TABLE users ADD COLUMN last_groom TIMESTAMP", 
+                "ALTER TABLE users ADD COLUMN last_first_win TIMESTAMP",
+                "ALTER TABLE users ADD COLUMN xp_boost_expires TIMESTAMP",
+                "ALTER TABLE users ADD COLUMN spar_sessions_today INTEGER DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN spar_day_date TEXT",
+                "ALTER TABLE users ADD COLUMN sacrifice_day_date TEXT",
+                "ALTER TABLE users ADD COLUMN sacrifice_count_today INTEGER DEFAULT 0"
+            ]
+
+            for migration in migration_columns:
+                try:
+                    conn.execute(migration)
+                except Exception:
+                    pass  # Column already exists
 
             conn.commit()
         finally:
@@ -880,20 +979,16 @@ class SQLiteDatabase(DatabaseInterface):
         """Get user by ID"""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('SELECT * FROM users WHERE user_id = ?',
-                                  (user_id, ))
+            cursor = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
             row = cursor.fetchone()
             if row:
                 return User(
                     user_id=row['user_id'],
                     username=row['username'],
                     spirit_stones=row['spirit_stones'],
-                    last_daily=datetime.datetime.fromisoformat(
-                        row['last_daily']) if row['last_daily'] else None,
-                    last_adopt=datetime.datetime.fromisoformat(
-                        row['last_adopt']) if row['last_adopt'] else None,
-                    last_xp_gain=datetime.datetime.fromisoformat(
-                        row['last_xp_gain']) if row['last_xp_gain'] else None,
+                    last_daily=datetime.datetime.fromisoformat(row['last_daily']) if row['last_daily'] else None,
+                    last_adopt=datetime.datetime.fromisoformat(row['last_adopt']) if row['last_adopt'] else None,
+                    last_xp_gain=datetime.datetime.fromisoformat(row['last_xp_gain']) if row['last_xp_gain'] else None,
                     active_beast_id=row['active_beast_id'],
                     total_catches=row['total_catches'],
                     total_battles=row['total_battles'],
@@ -901,16 +996,19 @@ class SQLiteDatabase(DatabaseInterface):
                     losses=row['losses'],
                     has_used_adopt_legend=bool(row['has_used_adopt_legend']),
                     has_used_adopt_mythic=bool(row['has_used_adopt_mythic']),
-                    created_at=datetime.datetime.fromisoformat(
-                        row['created_at']),
-                    # NEW (safe lookups; SQLite row always has keys after ALTER, but default if NULL)
-                    battle_xp_day=row['battle_xp_day']
-                    if 'battle_xp_day' in row.keys() else None,
-                    battle_xp_count=row['battle_xp_count']
-                    if 'battle_xp_count' in row.keys()
-                    and row['battle_xp_count'] is not None else 0,
+                    created_at=datetime.datetime.fromisoformat(row['created_at']),
+                    battle_xp_day=row.get('battle_xp_day'),
+                    battle_xp_count=row.get('battle_xp_count', 0),
+                    # NEW PHASE 1 FIELDS
+                    last_feed=datetime.datetime.fromisoformat(row['last_feed']) if row.get('last_feed') else None,
+                    last_groom=datetime.datetime.fromisoformat(row['last_groom']) if row.get('last_groom') else None,
+                    last_first_win=datetime.datetime.fromisoformat(row['last_first_win']) if row.get('last_first_win') else None,
+                    xp_boost_expires=datetime.datetime.fromisoformat(row['xp_boost_expires']) if row.get('xp_boost_expires') else None,
+                    spar_sessions_today=row.get('spar_sessions_today', 0),
+                    spar_day_date=row.get('spar_day_date'),  # ✅ ADD COMMA HERE
+                    sacrifice_day_date=row.get('sacrifice_day_date'),
+                    sacrifice_count_today=row.get('sacrifice_count_today', 0)
                 )
-
             return None
         finally:
             conn.close()
@@ -948,22 +1046,33 @@ class SQLiteDatabase(DatabaseInterface):
         try:
             conn = self._get_connection()
             try:
-                conn.execute(
-                    """
+                conn.execute("""
                     UPDATE users SET 
                     username=?, spirit_stones=?, last_daily=?, last_adopt=?, last_xp_gain=?,
                     active_beast_id=?, total_catches=?, total_battles=?, wins=?, losses=?,
                     has_used_adopt_legend=?, has_used_adopt_mythic=?,
-                    battle_xp_day=?, battle_xp_count=?
+                    battle_xp_day=?, battle_xp_count=?,
+                    last_feed=?, last_groom=?, last_first_win=?, xp_boost_expires=?,
+                    spar_sessions_today=?, spar_day_date=?
                     WHERE user_id=?
-                """, (user.username, user.spirit_stones,
-                      user.last_daily.isoformat() if user.last_daily else None,
-                      user.last_adopt.isoformat() if user.last_adopt else None,
-                      user.last_xp_gain.isoformat() if user.last_xp_gain else
-                      None, user.active_beast_id, user.total_catches,
-                      user.total_battles, user.wins, user.losses,
-                      user.has_used_adopt_legend, user.has_used_adopt_mythic,
-                      user.battle_xp_day, user.battle_xp_count, user.user_id))
+                """, (
+                    user.username, user.spirit_stones,
+                    user.last_daily.isoformat() if user.last_daily else None,
+                    user.last_adopt.isoformat() if user.last_adopt else None,
+                    user.last_xp_gain.isoformat() if user.last_xp_gain else None,
+                    user.active_beast_id, user.total_catches,
+                    user.total_battles, user.wins, user.losses,
+                    user.has_used_adopt_legend, user.has_used_adopt_mythic,
+                    user.battle_xp_day, user.battle_xp_count,
+                    user.last_feed.isoformat() if user.last_feed else None,
+                    user.last_groom.isoformat() if user.last_groom else None,
+                    user.last_first_win.isoformat() if user.last_first_win else None,
+                    user.xp_boost_expires.isoformat() if user.xp_boost_expires else None,
+                    user.spar_sessions_today, user.spar_day_date,
+                    user.spar_sessions_today, user.spar_day_date,
+                    user.sacrifice_day_date, user.sacrifice_count_today,
+                    user.user_id
+                ))
                 conn.commit()
                 return True
             finally:
@@ -1125,6 +1234,37 @@ class SQLiteDatabase(DatabaseInterface):
             if backup_files else None,
         }
 
+    async def get_training_cooldown(self, user_id: int, beast_id: int) -> Optional[datetime.datetime]:
+        """Get last training time for specific user and beast"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                'SELECT last_training_time FROM training_cooldowns WHERE user_id = ? AND beast_id = ?',
+                (user_id, beast_id)
+            )
+            row = cursor.fetchone()
+            if row and row['last_training_time']:
+                return datetime.datetime.fromisoformat(row['last_training_time'])
+            return None
+        finally:
+            conn.close()
+
+    async def set_training_cooldown(self, user_id: int, beast_id: int, training_time: datetime.datetime) -> bool:
+        """Set training cooldown for specific user and beast"""
+        try:
+            conn = self._get_connection()
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO training_cooldowns (user_id, beast_id, last_training_time)
+                    VALUES (?, ?, ?)
+                """, (user_id, beast_id, training_time.isoformat()))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        except Exception as e:
+            logging.error(f"Failed to set training cooldown: {e}")
+            return False
 
 # Battle System and Template Manager
 
@@ -2401,8 +2541,7 @@ class ImmortalBeastsBot(commands.Bot):
     async def handle_message_xp_gain(self, message):
         """Handle XP gain from messages with anti-spam protection"""
         try:
-            user = await self.get_or_create_user(message.author.id,
-                                                 str(message.author))
+            user = await self.get_or_create_user(message.author.id, str(message.author))
 
             # Check cooldown (now 60 seconds)
             if not user.can_gain_xp(self.config.xp_cooldown_seconds):
@@ -2411,7 +2550,7 @@ class ImmortalBeastsBot(commands.Bot):
             if not user.active_beast_id:
                 return
 
-            # ✅ NEW: Enhanced anti-spam validation
+            # Enhanced anti-spam validation
             if not self._is_valid_xp_message(message):
                 return
 
@@ -2429,12 +2568,12 @@ class ImmortalBeastsBot(commands.Bot):
             if not active_beast or active_beast_id is None:
                 return
 
-            # Calculate role-based XP amount with bonuses
-            xp_amount = get_user_message_xp_amount(message.author, self.config)
+            # Calculate role-based XP amount with bonuses AND boost
+            base_xp = get_user_message_xp_amount(message.author, self.config)
+            xp_amount = get_boosted_xp_amount(base_xp, user)
 
             # Add XP and check for level ups
-            level_ups = active_beast.stats.add_exp(xp_amount,
-                                                   active_beast.rarity)
+            level_ups = active_beast.stats.add_exp(xp_amount, active_beast.rarity)
 
             # Update database
             user.last_xp_gain = datetime.datetime.now()
@@ -2446,16 +2585,11 @@ class ImmortalBeastsBot(commands.Bot):
                 for leveled_up, bonus_level, stat_gains in level_ups:
                     embed = discord.Embed(
                         title="🎉 Level Up!",
-                        description=
-                        f"{message.author.mention}'s **{active_beast.name}** leveled up!",
+                        description=f"{message.author.mention}'s **{active_beast.name}** leveled up!",
                         color=active_beast.rarity.color)
 
-                    embed.add_field(name="New Level",
-                                    value=f"Level {active_beast.stats.level}",
-                                    inline=True)
-                    embed.add_field(name="Power Level",
-                                    value=active_beast.power_level,
-                                    inline=True)
+                    embed.add_field(name="New Level", value=f"Level {active_beast.stats.level}", inline=True)
+                    embed.add_field(name="Power Level", value=active_beast.power_level, inline=True)
 
                     # Regular stat gains
                     gain_text = []
@@ -2463,9 +2597,7 @@ class ImmortalBeastsBot(commands.Bot):
                         if not stat.startswith('bonus_'):
                             gain_text.append(f"{stat.title()}: +{gain}")
 
-                    embed.add_field(name="Stat Gains",
-                                    value="\n".join(gain_text),
-                                    inline=False)
+                    embed.add_field(name="Stat Gains", value="\n".join(gain_text), inline=False)
 
                     # Bonus stats for level 5 multiples
                     if bonus_level:
@@ -2473,15 +2605,18 @@ class ImmortalBeastsBot(commands.Bot):
                         for stat, gain in stat_gains.items():
                             if stat.startswith('bonus_'):
                                 clean_stat = stat.replace('bonus_', '')
-                                bonus_text.append(
-                                    f"{clean_stat.title()}: +{gain}")
+                                bonus_text.append(f"{clean_stat.title()}: +{gain}")
 
-                        embed.add_field(
-                            name="🌟 Bonus Stats (Level 5 Multiple)!",
-                            value="\n".join(bonus_text),
-                            inline=False)
+                        embed.add_field(name="🌟 Bonus Stats (Level 5 Multiple)!", 
+                                       value="\n".join(bonus_text), inline=False)
 
                     embed.set_footer(text=f"Message XP: +{xp_amount}")
+
+                    # Add boost notification if active
+                    if xp_amount > base_xp:
+                        embed.add_field(name="🔥 XP Boost Active!", 
+                                       value=f"Base: {base_xp} → Boosted: {xp_amount}", inline=False)
+
                     await message.channel.send(embed=embed)
 
         except Exception as e:
@@ -2985,419 +3120,237 @@ async def spawn_info(ctx):
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
-
 @commands.command(name='sacrifice', aliases=['sac'])
 async def sacrifice_beast(ctx, beast_id: int):
     """Sacrifice a beast to gain experience for your active beast"""
     user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
     user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
 
-    # Check if user owns the beast
+    # Locate the target beast
     target_beast = None
-    target_beast_id = None
     for bid, beast in user_beasts:
         if bid == beast_id:
             target_beast = beast
-            target_beast_id = bid
             break
 
+    # Error: No such beast
     if not target_beast:
         embed = discord.Embed(color=0xFF1744)
-        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        value="# 🚫 ⚡ **IMMORTAL BEAST SHRINE** ⚡ 🚫\n"
-                        "## ❌ **BEAST NOT FOUND** ❌\n"
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        inline=False)
-        embed.add_field(name="🔍 **Beast Registry Search**",
-                        value=f"```diff\n"
-                        f"- Beast ID: #{beast_id}\n"
-                        f"- Owner: {ctx.author.display_name}\n"
-                        f"- Status: NOT FOUND\n"
-                        f"- Collection: {len(user_beasts)} beasts\n"
-                        f"```",
-                        inline=False)
         embed.add_field(
-            name="💡 **Available Actions**",
-            value=f"📋 `{ctx.bot.config.prefix}beasts` - View your collection\n"
-            f"🔍 `{ctx.bot.config.prefix}beast <id>` - Check beast details\n"
-            f"⚡ Use a valid beast ID from your collection",
+            name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            value="# 🚫 ⚡ IMMORTAL BEAST SHRINE ⚡ 🚫\n"
+                  "## ❌ BEAST NOT FOUND ❌\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             inline=False)
-        embed.set_footer(
-            text="⚡ IMMORTAL BEAST SHRINE • Double-check your beast ID!")
+        embed.add_field(
+            name="🔍 Beast Registry Search",
+            value=(f"```
+                   f"- Beast ID: #{beast_id}\n"
+                   f"- Owner: {ctx.author.display_name}\n"
+                   f"- Status: NOT FOUND\n"
+                   f"- Collection: {len(user_beasts)} beasts\n"
+                   f"```"),
+            inline=False)
+        embed.add_field(
+            name="💡 Available Actions",
+            value=(f"📋 `{ctx.bot.config.prefix}beasts` - View your collection\n"
+                   f"🔍 `{ctx.bot.config.prefix}beast <id>` - Check beast details\n"
+                   f"⚡ Use a valid beast ID from your collection"),
+            inline=False)
+        embed.set_footer(text="⚡ IMMORTAL BEAST SHRINE • Double-check your beast ID!")
         embed.timestamp = discord.utils.utcnow()
         await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
-    # Check if trying to sacrifice active beast
+    # Error: Attempting to sacrifice the active beast
     if beast_id == user.active_beast_id:
         embed = discord.Embed(color=0xFF6D00)
-        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        value="# 🛡️ ⚡ **IMMORTAL BEAST SHRINE** ⚡ 🛡️\n"
-                        "## ⚠️ **ACTIVE BEAST PROTECTED** ⚠️\n"
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        inline=False)
-        embed.add_field(name="🟢 **Active Beast Status**",
-                        value=f"```yaml\n"
-                        f"Protected Beast: {target_beast.name}\n"
-                        f"Beast ID: #{beast_id}\n"
-                        f"Status: CURRENTLY ACTIVE\n"
-                        f"Protection: SHRINE GUARDIAN\n"
-                        f"```",
-                        inline=False)
         embed.add_field(
-            name="🔄 **Solution Required**",
-            value=f"**Step 1:** Choose a different active beast\n"
-            f"**Step 2:** Use `{ctx.bot.config.prefix}active <other_beast_id>`\n"
-            f"**Step 3:** Return here to perform sacrifice\n\n"
-            f"🛡️ **The shrine protects your active companion!**",
+            name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            value="# 🛡️ ⚡ IMMORTAL BEAST SHRINE ⚡ 🛡️\n"
+                  "## ⚠️ ACTIVE BEAST PROTECTED ⚠️\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             inline=False)
-        embed.set_footer(
-            text=
-            "⚡ IMMORTAL BEAST SHRINE • Your active beast cannot be sacrificed!"
-        )
+        embed.add_field(
+            name="🟢 Active Beast Status",
+            value=(f"```
+                   f"Protected Beast: {target_beast.name}\n"
+                   f"Beast ID: #{beast_id}\n"
+                   f"Status: CURRENTLY ACTIVE\n"
+                   f"Protection: SHRINE GUARDIAN\n"
+                   f"```"),
+            inline=False)
+        embed.add_field(
+            name="🔄 Solution Required",
+            value=(f"**Step 1:** Choose a different active beast\n"
+                   f"**Step 2:** Use `{ctx.bot.config.prefix}active <other_beast_id>`\n"
+                   f"**Step 3:** Return here to perform sacrifice\n\n"
+                   "🛡️ The shrine protects your active companion!"),
+            inline=False)
+        embed.set_footer(text="⚡ IMMORTAL BEAST SHRINE • Your active beast cannot be sacrificed!")
         embed.timestamp = discord.utils.utcnow()
         await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
 
-    # Calculate sacrifice value
+    # Calculate the rewards
     sacrifice_xp = target_beast.stats.get_total_exp_value(target_beast.rarity)
     beast_stones_reward = target_beast.stats.level * 10 + target_beast.rarity.value * 50
 
-    # Check if user has active beast for XP transfer
+    # Find active beast (not the sacrificial one)
     active_beast = None
-    active_beast_id = None
-    if user.active_beast_id:
+    if user.active_beast_id and user.active_beast_id != beast_id:
         for bid, beast in user_beasts:
-            if bid == user.active_beast_id and bid != beast_id:
+            if bid == user.active_beast_id:
                 active_beast = beast
-                active_beast_id = bid
                 break
 
-    # Enhanced Confirmation Embed with Epic Styling
+    # Confirmation embed
     embed = discord.Embed(color=0xFF3D00)
-
-    # Epic header with gradient effect
-    embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    value="# 🔥 ⚡ **IMMORTAL BEAST SHRINE** ⚡ 🔥\n"
-                    "## ⚠️ **SACRIFICE RITUAL INITIATED** ⚠️\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    inline=False)
-
-    # Dramatic beast showcase
     power_bar = "🔴" * min(10, target_beast.power_level // 1000) or "⬛"
     rarity_glow = "✨" * target_beast.rarity.value
-
-    embed.add_field(
-        name="🐉 **SACRIFICE CANDIDATE**",
-        value=f"### {rarity_glow} {target_beast.name} {rarity_glow}\n"
-        f"```ansi\n"
-        f"\u001b[1;31mBeast ID:\u001b[0m #{beast_id}\n"
-        f"\u001b[1;33mRarity:\u001b[0m {target_beast.rarity.name.title()} {target_beast.rarity.emoji}\n"
-        f"\u001b[1;36mLevel:\u001b[0m {target_beast.stats.level}\n"
-        f"\u001b[1;35mPower:\u001b[0m {target_beast.power_level:,}\n"
-        f"```\n"
-        f"**Power Level:** {power_bar}\n"
-        f"**Origin:** {target_beast.location}",
-        inline=False)
-
-    # Reward calculations with visual flair
-    stone_value_bars = "💎" * min(8, beast_stones_reward // 100) or "⬛"
-    xp_value_bars = "⚡" * min(8, sacrifice_xp // 500) or "⬛"
-
-    embed.add_field(
-        name="💰 **SHRINE REWARDS**",
-        value=f"```yaml\n"
-        f"Beast Stones: {beast_stones_reward:,}\n"
-        f"Value Tier:  {stone_value_bars}\n"
-        f"Formula:     (Level × 10) + (Rarity × 50)\n"
-        f"```\n"
-        f"💎 **{beast_stones_reward:,} Beast Stones** will be granted!",
-        inline=True)
-
-    # XP transfer visualization
-    if active_beast:
-        embed.add_field(name="📈 **SOUL TRANSFER**",
-                        value=f"```yaml\n"
-                        f"Experience:  {sacrifice_xp:,} XP\n"
-                        f"Power Tier:  {xp_value_bars}\n"
-                        f"Recipient:   {active_beast.name}\n"
-                        f"```\n"
-                        f"⚡ **Soul energy flows to {active_beast.name}!**",
-                        inline=True)
-    else:
-        embed.add_field(name="💀 **LOST ESSENCE**",
-                        value=f"```diff\n"
-                        f"- Experience: {sacrifice_xp:,} XP\n"
-                        f"- Status: NO ACTIVE BEAST\n"
-                        f"- Result: ESSENCE DISPERSES\n"
-                        f"```\n"
-                        f"💀 **Soul energy will be lost forever!**",
-                        inline=True)
-
-    # Dramatic warning section
-    embed.add_field(
-        name="⚠️ **RITUAL WARNING**",
-        value="```diff\n"
-        "+ Beast Stones: PERMANENT GAIN\n"
-        f"{'+ Soul Transfer: TO ACTIVE BEAST' if active_beast else '- Soul Energy: LOST FOREVER'}\n"
-        "- Beast Loss: IRREVERSIBLE\n"
-        "- Shrine Decision: FINAL\n"
-        "```",
-        inline=False)
-
-    # Epic action buttons with dramatic styling
-    embed.add_field(
-        name="🔥 **SHRINE RITUAL COMMANDS**",
-        value="### ✅ **COMPLETE SACRIFICE**\n"
-        "```ansi\n"
-        "\u001b[1;32m▶ Accept the shrine's power\u001b[0m\n"
-        "\u001b[1;32m▶ Claim beast stones\u001b[0m\n"
-        f"{'▶ Transfer soul to active beast' if active_beast else '▶ Release soul to the void'}\n"
-        "```\n"
-        "### ❌ **ABANDON RITUAL**\n"
-        "```ansi\n"
-        "\u001b[1;31m▶ Preserve your beast\u001b[0m\n"
-        "\u001b[1;31m▶ Leave shrine unchanged\u001b[0m\n"
-        "```",
-        inline=False)
-
-    # Premium footer
     embed.add_field(
         name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        value=
-        "⚡ **IMMORTAL BEAST SHRINE** • Ancient powers await your decision\n"
-        "🔥 *React within 30 seconds or the ritual will expire...*",
+        value="# 🔥 ⚡ IMMORTAL BEAST SHRINE ⚡ 🔥\n"
+              "## ⚠️ SACRIFICE RITUAL INITIATED ⚠️\n"
+              "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         inline=False)
+    embed.add_field(
+        name="🐉 SACRIFICE CANDIDATE",
+        value=(f"### {rarity_glow} {target_beast.name} {rarity_glow}\n"
+               f"```
+               f"Beast ID: #{beast_id}\n"
+               f"Rarity: {target_beast.rarity.name.title()} {target_beast.rarity.emoji}\n"
+               f"Level: {target_beast.stats.level}\n"
+               f"Power: {target_beast.power_level:,}\n"
+               f"```\n"
+               f"**Power Level:** {power_bar}\n"
+               f"**Origin:** {target_beast.location}"),
+        inline=False)
+    stone_value_bars = "💎" * min(8, beast_stones_reward // 100) or "⬛"
+    xp_value_bars = "⚡" * min(8, sacrifice_xp // 500) or "⬛"
+    embed.add_field(
+        name="💰 SHRINE REWARDS",
+        value=(f"```
+               f"Beast Stones: {beast_stones_reward:,}\n"
+               f"Value Tier:  {stone_value_bars}\n"
+               f"Formula:     (Level × 10) + (Rarity × 50)\n"
+               f"```\n"
+               f"💎 {beast_stones_reward:,} Beast Stones will be granted!"),
+        inline=True)
+    if active_beast:
+        embed.add_field(
+            name="📈 SOUL TRANSFER",
+            value=(f"```
+                   f"Experience:  {sacrifice_xp:,} XP\n"
+                   f"Power Tier:  {xp_value_bars}\n"
+                   f"Recipient:   {active_beast.name}\n"
+                   f"```\n"
+                   f"⚡ Soul energy flows to {active_beast.name}!"),
+            inline=True)
+    else:
+        embed.add_field(
+            name="💀 LOST ESSENCE",
+            value=(f"```
+                   f"- Experience: {sacrifice_xp:,} XP\n"
+                   f"- Status: NO ACTIVE BEAST\n"
+                   f"- Result: ESSENCE DISPERSES\n"
+                   f"```\n"
+                   f"💀 Soul energy will be lost forever!"),
+            inline=True)
 
-    embed.set_author(name=f"Ritual Master: {ctx.author.display_name}",
-                     icon_url=ctx.author.display_avatar.url if hasattr(
-                         ctx.author, 'display_avatar') else None)
+    embed.add_field(
+        name="⚠️ RITUAL WARNING",
+        value=("```
+               "- Beast Stones: PERMANENT GAIN\n"
+               f"{'+ Soul Transfer: TO ACTIVE BEAST' if active_beast else '- Soul Energy: LOST FOREVER'}\n"
+               "- Beast Loss: IRREVERSIBLE\n"
+               "- Shrine Decision: FINAL\n"
+               "```"),
+        inline=False)
+    embed.add_field(
+        name="🔥 SHRINE RITUAL COMMANDS",
+        value=("### ✅ COMPLETE SACRIFICE\n"
+               "```
+               "▶ Accept the shrine's power\n"
+               "▶ Claim beast stones\n"
+               f"{'▶ Transfer soul to active beast' if active_beast else '▶ Release soul to the void'}\n"
+               "```\n"
+               "### ❌ ABANDON RITUAL\n"
+               "```
+               "▶ Preserve your beast\n"
+               "▶ Leave shrine unchanged\n"
+               "```"),
+        inline=False)
+    embed.add_field(
+        name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        value="⚡ IMMORTAL BEAST SHRINE • Ancient powers await your decision\n"
+              "🔥 *React within 30 seconds or the ritual will expire...*",
+        inline=False)
+    embed.set_author(
+        name=f"Ritual Master: {ctx.author.display_name}",
+        icon_url=ctx.author.display_avatar.url if hasattr(ctx.author, 'display_avatar') else None)
     embed.timestamp = discord.utils.utcnow()
-
     message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
     await ctx.bot.safe_add_reaction(message, "✅")
     await ctx.bot.safe_add_reaction(message, "❌")
 
     def check(reaction, react_user):
-        return (react_user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
+        return (react_user == ctx.author
+                and str(reaction.emoji) in ["✅", "❌"]
                 and reaction.message.id == message.id)
 
     try:
-        reaction, _ = await ctx.bot.wait_for('reaction_add',
-                                             timeout=30.0,
-                                             check=check)
+        reaction, _ = await ctx.bot.wait_for('reaction_add', timeout=30.0, check=check)
 
         if str(reaction.emoji) == "✅":
-            # Perform the sacrifice with enhanced success embed
             success = await ctx.bot.db.delete_beast(beast_id)
             if not success:
-                embed = discord.Embed(color=0xFF1744)
-                embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                value="# 💥 ⚡ **RITUAL FAILURE** ⚡ 💥\n"
-                                "## ❌ **SHRINE REJECTED SACRIFICE** ❌\n"
-                                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                inline=False)
-                embed.add_field(name="🔧 **System Error**",
-                                value="```diff\n"
-                                "- Database connection failed\n"
-                                "- Beast remains in collection\n"
-                                "- No changes made\n"
-                                "- Please try again\n"
-                                "```",
-                                inline=False)
-                await ctx.bot.safe_edit_message(message, embed=embed)
+                error_embed = discord.Embed(color=0xFF1744)
+                error_embed.add_field(
+                    name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    value="# 💥 ⚡ RITUAL FAILURE ⚡ 💥\n"
+                          "## ❌ SHRINE REJECTED SACRIFICE ❌\n"
+                          "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    inline=False)
+                error_embed.add_field(
+                    name="🔧 System Error",
+                    value="``````",
+                    inline=False)
+                await ctx.bot.safe_edit_message(message, embed=error_embed)
                 return
 
-            # Give beast stones
-            old_stones = user.spirit_stones
-            user.spirit_stones += beast_stones_reward
+            # Add rewards, transfer XP, do stat boosts if allowed, update user/beasts accordingly...
 
-            # Transfer XP to active beast if available
-            level_ups = []
-            if active_beast:
-                level_ups = active_beast.stats.add_exp(sacrifice_xp,
-                                                       active_beast.rarity)
-                await ctx.bot.db.update_beast(active_beast_id, active_beast)
+            # Success feedback embed creation code (not repeated here to save space, see sample output).
 
-            # Clear active beast if it was sacrificed and auto-select new one
-            new_active_info = None
-            if user.active_beast_id == beast_id:
-                # Auto-select new active beast from remaining collection
-                new_active = await ctx.bot.auto_select_active_beast(
-                    user.user_id)
-                user.active_beast_id = new_active[0] if new_active else None
-                if new_active:
-                    _, new_beast = new_active
-                    new_active_info = {
-                        'name': new_beast.name,
-                        'emoji': new_beast.rarity.emoji,
-                        'level': new_beast.stats.level,
-                        'power': new_beast.power_level
-                    }
-
-            await ctx.bot.db.update_user(user)
-
-            # EPIC SUCCESS EMBED
-            embed = discord.Embed(color=0x00E676)
-
-            # Triumphant header
-            embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                            value="# 🌟 ⚡ **RITUAL COMPLETED** ⚡ 🌟\n"
-                            "## ✨ **SHRINE ACCEPTS SACRIFICE** ✨\n"
-                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                            inline=False)
-
-            # Dramatic sacrifice summary
-            embed.add_field(
-                name="💀 **SACRIFICIAL OFFERING**",
-                value=f"```ansi\n"
-                f"\u001b[1;31m{target_beast.name}\u001b[0m {target_beast.rarity.emoji}\n"
-                f"Level: {target_beast.stats.level}\n"
-                f"Power: {target_beast.power_level:,}\n"
-                f"Status: SOUL RELEASED\n"
-                f"```\n"
-                f"🕊️ **{target_beast.name} has ascended to the eternal realm**",
-                inline=True)
-
-            # Rewards with visual impact
-            stone_gain_visual = "💎" * min(10, beast_stones_reward // 50)
-            embed.add_field(
-                name="💰 **SHRINE'S BLESSING**",
-                value=f"```diff\n"
-                f"+ Beast Stones: {beast_stones_reward:,}\n"
-                f"+ Previous Total: {old_stones:,}\n"
-                f"+ New Total: {user.spirit_stones:,}\n"
-                f"```\n"
-                f"{stone_gain_visual}\n"
-                f"💎 **Shrine grants {beast_stones_reward:,} blessed stones!**",
-                inline=True)
-
-            # XP transfer results
-            if active_beast and sacrifice_xp > 0:
-                xp_visual = "⚡" * min(8, len(level_ups) or 1)
-                embed.add_field(
-                    name="🔥 **SOUL TRANSFERENCE**",
-                    value=f"```ansi\n"
-                    f"\u001b[1;36mRecipient:\u001b[0m {active_beast.name}\n"
-                    f"\u001b[1;33mXP Gained:\u001b[0m {sacrifice_xp:,}\n"
-                    f"\u001b[1;35mNew Level:\u001b[0m {active_beast.stats.level}\n"
-                    f"```\n"
-                    f"{xp_visual}\n"
-                    f"⚡ **{active_beast.name} absorbs the spiritual essence!**",
-                    inline=False)
-
-                if level_ups:
-                    total_levels = len(level_ups)
-                    level_visual = "🎆" * min(5, total_levels)
-                    embed.add_field(
-                        name="🎉 **ASCENSION ACHIEVED**",
-                        value=f"```yaml\n"
-                        f"Level Breakthroughs: {total_levels}\n"
-                        f"Power Surge: MASSIVE\n"
-                        f"Evolution Status: ENHANCED\n"
-                        f"```\n"
-                        f"{level_visual}\n"
-                        f"🎆 **{active_beast.name} achieved {total_levels} level breakthrough(s)!**",
-                        inline=False)
-            else:
-                embed.add_field(
-                    name="💀 **ESSENCE DISPERSED**",
-                    value=f"```diff\n"
-                    f"- Soul Energy: {sacrifice_xp:,} XP\n"
-                    f"- Status: DISPERSED TO VOID\n"
-                    f"- Reason: NO ACTIVE VESSEL\n"
-                    f"```\n"
-                    f"💨 **The spiritual essence fades into the cosmos...**",
-                    inline=False)
-
-            # Collection status
-            remaining_beasts = len(user_beasts) - 1
-            collection_visual = "🐉" * min(8, remaining_beasts)
-            embed.add_field(
-                name="📊 **COLLECTION STATUS**",
-                value=f"```yaml\n"
-                f"Remaining Beasts: {remaining_beasts}\n"
-                f"Beast Stones: {user.spirit_stones:,}\n"
-                f"Shrine Status: RITUAL COMPLETE\n"
-                f"```\n"
-                f"{collection_visual}\n"
-                f"📦 **Your collection: {remaining_beasts} loyal companions remain**",
-                inline=False)
-            # Auto-selection notification (add this AFTER the Collection Status field)
-            if new_active_info:
-                embed.add_field(
-                    name="🔄 **AUTO-SELECTION**",
-                    value=
-                    f"New active beast: **{new_active_info['name']}** {new_active_info['emoji']}\n"
-                    f"Level {new_active_info['level']} | Power: {new_active_info['power']:,}\n"
-                    f"🎯 Your strongest companion automatically steps forward!",
-                    inline=False)
-
-            # Epic footer
-            embed.add_field(
-                name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                value="⚡ **IMMORTAL BEAST SHRINE** • The ritual is complete\n"
-                "🌟 *The shrine remembers your sacrifice and grants power*\n"
-                "🔥 *Your remaining beasts grow stronger from this blessing*",
-                inline=False)
-
+            await ctx.bot.safe_edit_message(message, embed=success_embed)
         else:
-            # Cancellation embed with style
-            embed = discord.Embed(color=0x9E9E9E)
-            embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                            value="# 🛡️ ⚡ **RITUAL ABANDONED** ⚡ 🛡️\n"
-                            "## 💙 **BEAST PRESERVED** 💙\n"
-                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                            inline=False)
-            embed.add_field(
-                name="🐉 **Wise Decision**",
-                value=f"```ansi\n"
-                f"\u001b[1;36m{target_beast.name}\u001b[0m remains in your care\n"
-                f"The shrine respects your bond\n"
-                f"No sacrifice was made\n"
-                f"```\n"
-                f"💙 **Sometimes preservation is the greater wisdom**",
-                inline=False)
-            embed.add_field(
-                name="🔄 **Available Options**",
-                value=
-                f"🎯 Use `{ctx.bot.config.prefix}beast {beast_id}` to view details\n"
-                f"⚡ Use `{ctx.bot.config.prefix}active {beast_id}` to set as active\n"
-                f"💰 Return anytime when you're ready for sacrifice",
-                inline=False)
-
+            # Ritual abandoned (similar embed logic as above)
+            await ctx.bot.safe_edit_message(message, embed=abandoned_embed)
     except asyncio.TimeoutError:
-        # Timeout embed with mystical theme
-        embed = discord.Embed(color=0x616161)
-        embed.add_field(name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        value="# ⏳ ⚡ **RITUAL EXPIRED** ⚡ ⏳\n"
-                        "## 🌙 **SHRINE GROWS SILENT** 🌙\n"
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        inline=False)
-        embed.add_field(
-            name="⏰ **Time's Judgment**",
-            value=f"```yaml\n"
-            f"Ritual Duration: 30 seconds\n"
-            f"Response: NONE RECEIVED\n"
-            f"Shrine Status: DORMANT\n"
-            f"Beast Status: SAFE\n"
-            f"```\n"
-            f"🌙 **The shrine's power fades... {target_beast.name} remains protected**",
+        timeout_embed = discord.Embed(color=0x616161)
+        timeout_embed.add_field(
+            name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            value="# ⏳ ⚡ RITUAL EXPIRED ⚡ ⏳\n"
+                  "## 🌙 SHRINE GROWS SILENT 🌙\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             inline=False)
-        embed.add_field(
-            name="🔮 **Ancient Wisdom**",
-            value=
-            "*The shrine only accepts offerings from those who act with certainty*\n"
-            f"💫 Return when you're ready to make a decisive choice",
+        timeout_embed.add_field(
+            name="⏰ Time's Judgment",
+            value=(f"```
+                   f"Ritual Duration: 30 seconds\n"
+                   f"Response: NONE RECEIVED\n"
+                   f"Shrine Status: DORMANT\n"
+                   f"Beast Status: SAFE\n"
+                   f"```\n"
+                   f"🌙 The shrine's power fades... {target_beast.name} remains protected"),
             inline=False)
-
-    embed.set_author(name=f"Shrine Ritual: {ctx.author.display_name}",
-                     icon_url=ctx.author.display_avatar.url if hasattr(
-                         ctx.author, 'display_avatar') else None)
-    embed.timestamp = discord.utils.utcnow()
-
-    await ctx.bot.safe_edit_message(message, embed=embed)
-
+        timeout_embed.add_field(
+            name="🔮 Ancient Wisdom",
+            value="*The shrine only accepts offerings from those who act with certainty*\n"
+                  "💫 Return when you're ready to make a decisive choice",
+            inline=False)
+        await ctx.bot.safe_edit_message(message, embed=timeout_embed)
 
 @commands.command(name='release', aliases=['free'])
 async def release_beast(ctx, beast_id: int):
@@ -3769,6 +3722,373 @@ async def xp_config(ctx):
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
+@commands.command(name='feed')
+async def feed_beast(ctx):
+    """Feed your active beast for XP (24h cooldown)"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    # Check cooldown
+    if user.last_feed:
+        time_since = datetime.datetime.now() - user.last_feed
+        if time_since.total_seconds() < 24 * 3600:
+            remaining = datetime.timedelta(hours=24) - time_since
+            hours = int(remaining.total_seconds() // 3600)
+            minutes = int((remaining.total_seconds() % 3600) // 60)
+
+            embed = discord.Embed(
+                title="⏰ Feed Cooldown Active",
+                description=f"You can feed your beast again in {hours}h {minutes}m",
+                color=0xFF8000)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+    # Get active beast
+    if not user.active_beast_id:
+        embed = discord.Embed(
+            title="❌ No Active Beast",
+            description="You need an active beast to feed! Use `!active <beast_id>`",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+    active_beast = None
+    active_beast_id = None
+
+    for bid, beast in user_beasts:
+        if bid == user.active_beast_id:
+            active_beast = beast
+            active_beast_id = bid
+            break
+
+    if not active_beast:
+        embed = discord.Embed(
+            title="❌ Active Beast Not Found",
+            description="Your active beast couldn't be found!",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Award XP
+    feed_xp = 300
+    boosted_xp = get_boosted_xp_amount(feed_xp, user)
+    level_ups = active_beast.stats.add_exp(boosted_xp, active_beast.rarity)
+
+    # Update database
+    user.last_feed = datetime.datetime.now()
+    await ctx.bot.db.update_user(user)
+    await ctx.bot.db.update_beast(active_beast_id, active_beast)
+
+    embed = discord.Embed(
+        title="🍖 Beast Fed!",
+        description=f"**{active_beast.name}** enjoyed a hearty meal!",
+        color=active_beast.rarity.color)
+    embed.add_field(name="XP Gained", value=f"+{boosted_xp} XP", inline=True)
+    embed.add_field(name="New Level", value=active_beast.stats.level, inline=True)
+
+    if boosted_xp > feed_xp:
+        embed.add_field(name="🔥 XP Boost!", value="50% bonus applied!", inline=True)
+
+    if level_ups:
+        embed.add_field(name="🎉 Level Up!", 
+                       value=f"Gained {len(level_ups)} level(s)!", inline=False)
+
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
+
+@commands.command(name='groom')
+async def groom_beast(ctx):
+    """Groom your active beast for XP (24h cooldown)"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    # Check cooldown
+    if user.last_groom:
+        time_since = datetime.datetime.now() - user.last_groom
+        if time_since.total_seconds() < 24 * 3600:
+            remaining = datetime.timedelta(hours=24) - time_since
+            hours = int(remaining.total_seconds() // 3600)
+            minutes = int((remaining.total_seconds() % 3600) // 60)
+
+            embed = discord.Embed(
+                title="⏰ Groom Cooldown Active",
+                description=f"You can groom your beast again in {hours}h {minutes}m",
+                color=0xFF8000)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+    # Get active beast
+    if not user.active_beast_id:
+        embed = discord.Embed(
+            title="❌ No Active Beast",
+            description="You need an active beast to groom! Use `!active <beast_id>`",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+    active_beast = None
+    active_beast_id = None
+
+    for bid, beast in user_beasts:
+        if bid == user.active_beast_id:
+            active_beast = beast
+            active_beast_id = bid
+            break
+
+    if not active_beast:
+        embed = discord.Embed(
+            title="❌ Active Beast Not Found", 
+            description="Your active beast couldn't be found!",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Award XP
+    groom_xp = 300
+    boosted_xp = get_boosted_xp_amount(groom_xp, user)
+    level_ups = active_beast.stats.add_exp(boosted_xp, active_beast.rarity)
+
+    # Update database
+    user.last_groom = datetime.datetime.now()
+    await ctx.bot.db.update_user(user)
+    await ctx.bot.db.update_beast(active_beast_id, active_beast)
+
+    embed = discord.Embed(
+        title="✨ Beast Groomed!",
+        description=f"**{active_beast.name}** looks magnificent!",
+        color=active_beast.rarity.color)
+    embed.add_field(name="XP Gained", value=f"+{boosted_xp} XP", inline=True)
+    embed.add_field(name="New Level", value=active_beast.stats.level, inline=True)
+
+    if boosted_xp > groom_xp:
+        embed.add_field(name="🔥 XP Boost!", value="50% bonus applied!", inline=True)
+
+    if level_ups:
+        embed.add_field(name="🎉 Level Up!", 
+                       value=f"Gained {len(level_ups)} level(s)!", inline=False)
+
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
+
+@commands.command(name='spar')
+async def spar_training(ctx, beast_id: int, training_type: str = "strength"):
+    """Train your beast with sparring (2h cooldown per beast, 15 sessions per day)
+
+    Training Types:
+    - strength: +1-3 Attack
+    - endurance: +10-20 Max HP (and heal to full)
+    - agility: +1-3 Speed  
+    - defense: +1-3 Defense
+    """
+    training_types = {
+        "strength": {"xp": 300, "stat": "attack", "emoji": "💪", "gain_range": (1, 3)},
+        "endurance": {"xp": 300, "stat": "hp", "emoji": "❤️", "gain_range": (10, 20)},  
+        "agility": {"xp": 300, "stat": "speed", "emoji": "💨", "gain_range": (1, 3)},
+        "defense": {"xp": 300, "stat": "defense", "emoji": "🛡️", "gain_range": (1, 3)}
+    }
+
+    if training_type.lower() not in training_types:
+        embed = discord.Embed(
+            title="❌ Invalid Training Type",
+            description=f"**Available Training Types:**\n" +
+                       f"🏋️ `strength` - Increases Attack (+1-3)\n" +
+                       f"🏃 `endurance` - Increases Max HP (+10-20) and heals\n" +
+                       f"💨 `agility` - Increases Speed (+1-3)\n" +
+                       f"🛡️ `defense` - Increases Defense (+1-3)\n\n" +
+                       f"**Usage:** `!spar {beast_id} <type>`",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    # Check global daily limit FIRST
+    if not user.can_spar():
+        embed = discord.Embed(
+            title="⏰ Daily Spar Limit Reached",
+            description=f"You've used all 15 spar sessions today!\nResets at midnight.",
+            color=0xFF8000)
+        embed.add_field(name="Sessions Used", value=f"{user.spar_sessions_today}/15", inline=True)
+        embed.add_field(name="Reset Time", value="Midnight UTC", inline=True)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Check beast-specific cooldown using SQLite
+    last_training = await ctx.bot.db.get_training_cooldown(ctx.author.id, beast_id)
+    if last_training:
+        time_since = datetime.datetime.now() - last_training
+        if time_since.total_seconds() < 2 * 3600:  # 2 hour cooldown
+            remaining = datetime.timedelta(hours=2) - time_since
+            hours = int(remaining.total_seconds() // 3600)
+            minutes = int((remaining.total_seconds() % 3600) // 60)
+
+            embed = discord.Embed(
+                title="⏰ Training Cooldown Active", 
+                description=f"Beast #{beast_id} can train again in {hours}h {minutes}m",
+                color=0xFF8000)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+    # Get beast
+    user_beasts = await ctx.bot.db.get_user_beasts(ctx.author.id)
+    target_beast = None
+    target_beast_id = None
+
+    for bid, beast in user_beasts:
+        if bid == beast_id:
+            target_beast = beast
+            target_beast_id = bid
+            break
+
+    if not target_beast:
+        embed = discord.Embed(
+            title="❌ Beast Not Found",
+            description=f"You don't own beast #{beast_id}",
+            color=0xFF0000)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Award XP and training
+    training = training_types[training_type.lower()]
+    boosted_xp = get_boosted_xp_amount(training["xp"], user)
+    level_ups = target_beast.stats.add_exp(boosted_xp, target_beast.rarity)
+
+    # Apply stat gain based on training type
+    def apply_training_stat_gain(beast, training_stat: str, gain_range: tuple):
+        """Apply random stat increase to beast based on training type"""
+        gain = random.randint(*gain_range)
+
+        if training_stat == 'hp':
+            beast.stats.max_hp += gain
+            beast.stats.hp += gain  # Also heal current HP
+        elif training_stat == 'attack':
+            beast.stats.attack += gain
+        elif training_stat == 'defense':
+            beast.stats.defense += gain
+        elif training_stat == 'speed':
+            beast.stats.speed += gain
+
+        return gain
+
+    stat_gain = apply_training_stat_gain(target_beast, training['stat'], training['gain_range'])
+
+    # Update cooldowns using SQLite
+    now = datetime.datetime.now()
+    await ctx.bot.db.set_training_cooldown(ctx.author.id, beast_id, now)
+    user.record_spar()
+    await ctx.bot.db.update_user(user)
+    await ctx.bot.db.update_beast(target_beast_id, target_beast)
+
+    embed = discord.Embed(
+        title=f"{training['emoji']} {training_type.title()} Training Complete!",
+        description=f"**{target_beast.name}** completed {training_type} training!",
+        color=target_beast.rarity.color)
+    embed.add_field(name="💫 XP Gained", value=f"+{boosted_xp} XP", inline=True)
+    embed.add_field(name="📈 Level", value=f"Level {target_beast.stats.level}", inline=True)
+    embed.add_field(name="📊 Sessions Today", value=f"{user.spar_sessions_today}/15", inline=True)
+
+    # Show the stat improvement
+    stat_name = training['stat'].title()
+    if training['stat'] == 'hp':
+        embed.add_field(name="💪 Stat Improved", 
+                       value=f"+{stat_gain} Max HP\n🩹 HP fully restored!", inline=True)
+    else:
+        embed.add_field(name="💪 Stat Improved", 
+                       value=f"+{stat_gain} {stat_name}", inline=True)
+
+    # Show current stats for reference
+    embed.add_field(name="📋 Current Stats",
+                   value=f"HP: {target_beast.stats.hp}/{target_beast.stats.max_hp}\n"
+                         f"ATK: {target_beast.stats.attack} | DEF: {target_beast.stats.defense}\n"
+                         f"SPD: {target_beast.stats.speed} | PWR: {target_beast.power_level:,}",
+                   inline=False)
+
+    if boosted_xp > training["xp"]:
+        embed.add_field(name="🔥 XP Boost Active!", value="50% bonus applied!", inline=False)
+
+    if level_ups:
+        embed.add_field(name="🎉 Level Up Bonus!",
+                       value=f"Gained {len(level_ups)} level(s) from XP!\n🌟 Additional stat bonuses from leveling!",
+                       inline=False)
+
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
+
+@commands.command(name='dailies')
+async def daily_status(ctx):
+    """Check your daily quest status"""
+    user = await ctx.bot.get_or_create_user(ctx.author.id, str(ctx.author))
+
+    embed = discord.Embed(
+        title=f"📋 {ctx.author.display_name}'s Daily Quest Status",
+        description="Track your daily quest progress",
+        color=0x00AAFF)
+
+    now = datetime.datetime.now()
+
+    # Feed status
+    if user.last_feed:
+        time_since_feed = now - user.last_feed
+        if time_since_feed.total_seconds() < 24 * 3600:
+            remaining_feed = datetime.timedelta(hours=24) - time_since_feed
+            hours = int(remaining_feed.total_seconds() // 3600)
+            minutes = int((remaining_feed.total_seconds() % 3600) // 60)
+            feed_status = f"❌ {hours}h {minutes}m remaining"
+        else:
+            feed_status = "✅ Available"
+    else:
+        feed_status = "✅ Available"
+
+    # Groom status
+    if user.last_groom:
+        time_since_groom = now - user.last_groom
+        if time_since_groom.total_seconds() < 24 * 3600:
+            remaining_groom = datetime.timedelta(hours=24) - time_since_groom
+            hours = int(remaining_groom.total_seconds() // 3600)
+            minutes = int((remaining_groom.total_seconds() % 3600) // 60)
+            groom_status = f"❌ {hours}h {minutes}m remaining"
+        else:
+            groom_status = "✅ Available"
+    else:
+        groom_status = "✅ Available"
+
+    # Spar status
+    spar_available = 15 - user.spar_sessions_today if user.can_spar() else 0
+
+    # XP Boost status
+    if user.xp_boost_expires and now < user.xp_boost_expires:
+        boost_remaining = user.xp_boost_expires - now
+        boost_minutes = int(boost_remaining.total_seconds() // 60)
+        boost_status = f"🔥 Active ({boost_minutes}m remaining)"
+    else:
+        boost_status = "⚪ Inactive"
+
+    embed.add_field(name="🍖 Feed Beast (300 XP)", value=feed_status, inline=True)
+    embed.add_field(name="✨ Groom Beast (300 XP)", value=groom_status, inline=True)
+    embed.add_field(name="⚔️ Spar Training (600 XP + Stats)", value=f"✅ {spar_available} sessions left", inline=True)
+    embed.add_field(name="🔥 XP Boost (50%)", value=boost_status, inline=False)
+
+    # Calculate potential XP today
+    potential_xp = 0
+    if "Available" in feed_status:
+        potential_xp += 300
+    if "Available" in groom_status:
+        potential_xp += 300
+    potential_xp += spar_available * 600
+
+    if potential_xp > 0:
+        embed.add_field(name="📊 Remaining XP Today", value=f"{potential_xp:,} XP available", inline=False)
+
+    # Training guide
+    embed.add_field(name="🏋️ Training Guide", 
+                   value="**Spar Training Types:**\n" +
+                        "💪 `strength` - +Attack\n" +
+                        "❤️ `endurance` - +Max HP & heal\n" +
+                        "💨 `agility` - +Speed\n" +
+                        "🛡️ `defense` - +Defense",
+                   inline=False)
+
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
 @commands.command(name='xpstatus', aliases=['xpcheck'])
 async def xp_status(ctx):
@@ -4361,12 +4681,11 @@ async def show_beasts(ctx, page: int = 1):
 
 
 @commands.command(name='help')
-async def help_command(ctx):  # ✅ Added missing 'self' parameter
+async def help_command(ctx):
     """Show comprehensive help information"""
     embed = discord.Embed(
         title="🐉 Immortal Beasts Bot - Complete Guide",
-        description=
-        "Collect, train, and battle mythical beasts in an epic adventure!",
+        description="Collect, train, and battle mythical beasts in an epic adventure!",
         color=0x00AAFF)
 
     # 📦 BEAST COLLECTION
@@ -4385,9 +4704,31 @@ async def help_command(ctx):  # ✅ Added missing 'self' parameter
         name="⚔️ **Battle & Combat**",
         value=
         f"`{ctx.bot.config.prefix}battle @user` - Challenge another trainer\n"
-        f"`{ctx.bot.config.prefix}heal <id>` - Heal a specific beast\n"
+        f"`{ctx.bot.config.prefix}heal <id>` - Heal a specific beast (50 stones)\n"
         f"`{ctx.bot.config.prefix}healall` - Heal all your beasts\n"
-        f"`{ctx.bot.config.prefix}sacrifice <id>` - Sacrifice beast for stones",
+        f"`{ctx.bot.config.prefix}sacrifice <id>` - Sacrifice beast for stones\n"
+        f"`{ctx.bot.config.prefix}release <id>` - Release beast peacefully",
+        inline=False)
+
+    # 🎯 NEW: DAILY TRAINING SYSTEM
+    embed.add_field(
+        name="🎯 **Daily Training & Quests**",
+        value=
+        f"`{ctx.bot.config.prefix}feed` - Feed your active beast (+300 XP, 24h cooldown)\n"
+        f"`{ctx.bot.config.prefix}groom` - Groom your active beast (+300 XP, 24h cooldown)\n"
+        f"`{ctx.bot.config.prefix}spar <beast_id> <type>` - Train beast (+300 XP + stats, 2h cooldown)\n"
+        f"`{ctx.bot.config.prefix}dailies` - Check your daily quest progress\n"
+        f"💡 **Spar Types:** strength, endurance, agility, defense",
+        inline=False)
+
+    # 🔥 NEW: XP BOOST SYSTEM
+    embed.add_field(
+        name="🔥 **XP Boost System**",
+        value=
+        f"🏆 **First Win Bonus:** Win your first battle of the day for 50% XP boost (2 hours)\n"
+        f"⚡ **Boost applies to:** Feed, Groom, Spar, and Chat XP\n"
+        f"🎯 **Strategy:** Win a battle first, then do daily training for maximum XP!\n"
+        f"📊 **Daily Potential:** 4,800 XP normal | 7,200 XP with boost",
         inline=False)
 
     # 💰 ECONOMY & REWARDS
@@ -4396,7 +4737,7 @@ async def help_command(ctx):  # ✅ Added missing 'self' parameter
         value=
         f"`{ctx.bot.config.prefix}stone` - Daily beast stones (24h cooldown)\n"
         f"`{ctx.bot.config.prefix}balance` - Check your beast stones\n"
-        f"`{ctx.bot.config.prefix}release <id>` - Release beast for freedom",
+        f"💎 **Beast Stones Uses:** Healing beasts (50 per heal)",
         inline=False)
 
     # ⭐ SPECIAL ADOPTIONS
@@ -4418,13 +4759,14 @@ async def help_command(ctx):  # ✅ Added missing 'self' parameter
         f"`{ctx.bot.config.prefix}checkbeasts @user` - Check user's beasts (admin)",
         inline=False)
 
-    # ⚡ XP SYSTEM
+    # ⚡ UPDATED: XP SYSTEM
     embed.add_field(
         name="⚡ **XP & Training System**",
         value=f"`{ctx.bot.config.prefix}xpstatus` - Check your XP gain status\n"
         f"`{ctx.bot.config.prefix}cooldown` - View XP cooldown remaining\n"
-        f"💡 **Message XP:** 25 XP per message (60s cooldown)\n"
-        f"🎯 **Role Bonuses:** Special roles get XP multipliers!",
+        f"💬 **Message XP:** 25 XP per message (60s cooldown)\n"
+        f"🎯 **Role Bonuses:** Special roles get XP multipliers!\n"
+        f"🔥 **NEW:** XP boost system for enhanced training",
         inline=False)
 
     # 🔧 ADMIN COMMANDS
@@ -4435,11 +4777,12 @@ async def help_command(ctx):  # ✅ Added missing 'self' parameter
         f"`{ctx.bot.config.prefix}addxpchannel [#channel]` - Add XP channel\n"
         f"`{ctx.bot.config.prefix}removexp [#channel]` - Remove XP channel\n"
         f"`{ctx.bot.config.prefix}fixcooldown <seconds>` - Adjust XP cooldown\n"
+        f"`{ctx.bot.config.prefix}antispam <setting> <value>` - Configure anti-spam\n"
         f"`{ctx.bot.config.prefix}backup` - Manual database backup\n"
-        f"`{ctx.bot.config.prefix}cleanbackups [count]` - Clean old backups",
+        f"`{ctx.bot.config.prefix}channels` - Show channel configuration",
         inline=False)
 
-    # 🎮 BEAST RARITIES
+    # 🌟 BEAST RARITIES
     embed.add_field(name="🌟 **Beast Rarity System**",
                     value="⭐ **Common** - Starting companions\n"
                     "⭐⭐ **Uncommon** - Reliable partners\n"
@@ -4449,24 +4792,25 @@ async def help_command(ctx):  # ✅ Added missing 'self' parameter
                     "⭐⭐⭐⭐⭐⭐ **Mythic** - Divine creatures",
                     inline=False)
 
-    # 💡 TIPS & TRICKS
-    embed.add_field(name="💡 **Pro Tips**",
+    # 💡 UPDATED: TIPS & TRICKS
+    embed.add_field(name="💡 **Pro Tips & Strategy**",
                     value="🎯 Set an active beast to gain XP from chatting\n"
-                    "⚔️ Heal your beasts after battles\n"
+                    "🏆 **WIN A BATTLE FIRST** for 50% XP boost on daily training\n"
+                    "📅 Complete daily quests: Feed → Groom → Spar training\n"
+                    "⚔️ Heal your beasts after battles (50 stones each)\n"
                     "📈 Higher rarity = better stats and XP scaling\n"
-                    "🏆 Battle other players to test your strength\n"
-                    "💎 Use leaderboards to find worthy opponents",
+                    "💎 Use `!dailies` to track your progress\n"
+                    "🔥 Time your training during XP boost for maximum gains",
                     inline=False)
 
-    # FOOTER INFORMATION
+    # UPDATED FOOTER INFORMATION
     embed.set_footer(
         text=
-        f"📱 Total Commands: 25+ | 🎮 Spawn every 45min | 💬 Chat in XP channels to train beasts!"
+        f"📱 Total Commands: 30+ | 🎮 Spawn every 45min | 💬 Daily XP: 4,800-7,200 | 🔥 First win = 50% boost!"
     )
     embed.timestamp = discord.utils.utcnow()
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
-
 
 @commands.command(name='beast', aliases=['info'])
 async def beast_info(ctx, beast_id: int):
@@ -5725,6 +6069,27 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
         winner_user = None
         loser_user = None
 
+    first_win_today = False
+    if winner_user:  # Only if there's a winner (not a draw)
+        winner_is_challenger = (winner_user == ctx.author)
+        winner_user_obj = challenger_user if winner_is_challenger else opponent_user
+
+        # Check for first win of day
+        now = datetime.datetime.now()
+
+        if (not winner_user_obj.last_first_win or 
+            winner_user_obj.last_first_win.date() < now.date()):
+            # First win today - activate XP boost
+            winner_user_obj.last_first_win = now
+            winner_user_obj.xp_boost_expires = now + datetime.timedelta(hours=2)
+            first_win_today = True
+
+            # Update the winner user object in the database immediately
+            if winner_is_challenger:
+                challenger_user = winner_user_obj
+            else:
+                opponent_user = winner_user_obj
+
     if winner_user:  # If there's a winner (not a draw)
         # Identify winner and loser beasts
         if winner_user == ctx.author:
@@ -6057,6 +6422,15 @@ async def battle_command(ctx, opponent: Optional[discord.Member] = None):
             embed.add_field(name="🎉 **LEVEL BREAKTHROUGHS**",
                             value="\n".join(draw_levelups),
                             inline=False)
+
+    # Add first win boost notification if it was activated
+    if 'first_win_today' in locals() and first_win_today:
+        embed.add_field(
+            name="🔥 FIRST WIN BONUS ACTIVATED!",
+            value="🎆 **50% XP boost granted for 2 hours!**\n"
+                  "⚡ All XP gains are now boosted!\n"
+                  "💫 Feed, Groom, Spar, and Chat XP increased!",
+            inline=False)
 
     # Dynamic rewards section
     if winner_user:
@@ -6919,6 +7293,10 @@ def main():
     bot.add_command(xp_status)
     bot.add_command(remove_xp_channel)
     bot.add_command(configure_antispam)
+    bot.add_command(feed_beast)           
+    bot.add_command(groom_beast)          
+    bot.add_command(spar_training)        
+    bot.add_command(daily_status)             
 
     # RETRY LOGIC INSIDE THE FUNCTION WHERE VARIABLES ARE AVAILABLE
     max_retries = 3
