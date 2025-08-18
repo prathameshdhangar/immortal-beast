@@ -986,46 +986,51 @@ class SQLiteDatabase(DatabaseInterface):
         """Get user by ID"""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('SELECT * FROM users WHERE user_id = ?',
-                                  (user_id, ))
+            cursor = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
             row = cursor.fetchone()
             if row:
+                # Helper function to safely get values
+                def safe_get(field_name, default=None):
+                    try:
+                        return row[field_name]
+                    except (KeyError, IndexError):
+                        return default
+
+                def safe_datetime(field_name):
+                    try:
+                        value = row[field_name]
+                        return datetime.datetime.fromisoformat(value) if value else None
+                    except (KeyError, IndexError):
+                        return None
+
                 return User(
                     user_id=row['user_id'],
                     username=row['username'],
                     spirit_stones=row['spirit_stones'],
-                    last_daily=datetime.datetime.fromisoformat(
-                        row['last_daily']) if row['last_daily'] else None,
-                    last_adopt=datetime.datetime.fromisoformat(
-                        row['last_adopt']) if row['last_adopt'] else None,
-                    last_xp_gain=datetime.datetime.fromisoformat(
-                        row['last_xp_gain']) if row['last_xp_gain'] else None,
-                    active_beast_id=row['active_beast_id'],
+                    last_daily=safe_datetime('last_daily'),
+                    last_adopt=safe_datetime('last_adopt'),
+                    last_xp_gain=safe_datetime('last_xp_gain'),
+                    active_beast_id=safe_get('active_beast_id'),
                     total_catches=row['total_catches'],
                     total_battles=row['total_battles'],
                     wins=row['wins'],
                     losses=row['losses'],
-                    has_used_adopt_legend=bool(row['has_used_adopt_legend']),
-                    has_used_adopt_mythic=bool(row['has_used_adopt_mythic']),
-                    created_at=datetime.datetime.fromisoformat(
-                        row['created_at']),
-                    battle_xp_day=row.get('battle_xp_day'),
-                    battle_xp_count=row.get('battle_xp_count', 0),
-                    # NEW PHASE 1 FIELDS
-                    last_feed=datetime.datetime.fromisoformat(row['last_feed'])
-                    if row.get('last_feed') else None,
-                    last_groom=datetime.datetime.fromisoformat(
-                        row['last_groom']) if row.get('last_groom') else None,
-                    last_first_win=datetime.datetime.fromisoformat(
-                        row['last_first_win'])
-                    if row.get('last_first_win') else None,
-                    xp_boost_expires=datetime.datetime.fromisoformat(
-                        row['xp_boost_expires'])
-                    if row.get('xp_boost_expires') else None,
-                    spar_sessions_today=row.get('spar_sessions_today', 0),
-                    spar_day_date=row.get('spar_day_date'),  # ✅ ADD COMMA HERE
-                    sacrifice_day_date=row.get('sacrifice_day_date'),
-                    sacrifice_count_today=row.get('sacrifice_count_today', 0))
+                    has_used_adopt_legend=bool(safe_get('has_used_adopt_legend', False)),
+                    has_used_adopt_mythic=bool(safe_get('has_used_adopt_mythic', False)),
+                    created_at=datetime.datetime.fromisoformat(row['created_at']),
+
+                    # Optional fields with safe access
+                    battle_xp_day=safe_get('battle_xp_day'),
+                    battle_xp_count=safe_get('battle_xp_count', 0),
+                    last_feed=safe_datetime('last_feed'),
+                    last_groom=safe_datetime('last_groom'),
+                    last_first_win=safe_datetime('last_first_win'),
+                    xp_boost_expires=safe_datetime('xp_boost_expires'),
+                    spar_sessions_today=safe_get('spar_sessions_today', 0),
+                    spar_day_date=safe_get('spar_day_date'),
+                    sacrifice_day_date=safe_get('sacrifice_day_date'),
+                    sacrifice_count_today=safe_get('sacrifice_count_today', 0)
+                )
             return None
         finally:
             conn.close()
@@ -1063,33 +1068,47 @@ class SQLiteDatabase(DatabaseInterface):
         try:
             conn = self._get_connection()
             try:
+                # First, update core fields that should always exist
                 conn.execute(
                     """
                     UPDATE users SET 
                     username=?, spirit_stones=?, last_daily=?, last_adopt=?, last_xp_gain=?,
                     active_beast_id=?, total_catches=?, total_battles=?, wins=?, losses=?,
-                    has_used_adopt_legend=?, has_used_adopt_mythic=?,
-                    battle_xp_day=?, battle_xp_count=?,
-                    last_feed=?, last_groom=?, last_first_win=?, xp_boost_expires=?,
-                    spar_sessions_today=?, spar_day_date=?
+                    has_used_adopt_legend=?, has_used_adopt_mythic=?
                     WHERE user_id=?
-                """,
+                    """,
                     (user.username, user.spirit_stones,
                      user.last_daily.isoformat() if user.last_daily else None,
                      user.last_adopt.isoformat() if user.last_adopt else None,
-                     user.last_xp_gain.isoformat() if user.last_xp_gain else
-                     None, user.active_beast_id, user.total_catches,
+                     user.last_xp_gain.isoformat() if user.last_xp_gain else None, 
+                     user.active_beast_id, user.total_catches,
                      user.total_battles, user.wins, user.losses,
                      user.has_used_adopt_legend, user.has_used_adopt_mythic,
-                     user.battle_xp_day, user.battle_xp_count,
-                     user.last_feed.isoformat() if user.last_feed else None,
-                     user.last_groom.isoformat() if user.last_groom else None,
-                     user.last_first_win.isoformat() if user.last_first_win
-                     else None, user.xp_boost_expires.isoformat() if
-                     user.xp_boost_expires else None, user.spar_sessions_today,
-                     user.spar_day_date, user.spar_sessions_today,
-                     user.spar_day_date, user.sacrifice_day_date,
-                     user.sacrifice_count_today, user.user_id))
+                     user.user_id))
+
+                # Then try to update optional fields one by one
+                optional_fields = [
+                    ('battle_xp_day', user.battle_xp_day),
+                    ('battle_xp_count', user.battle_xp_count),
+                    ('last_feed', user.last_feed.isoformat() if user.last_feed else None),
+                    ('last_groom', user.last_groom.isoformat() if user.last_groom else None),
+                    ('last_first_win', user.last_first_win.isoformat() if user.last_first_win else None),
+                    ('xp_boost_expires', user.xp_boost_expires.isoformat() if user.xp_boost_expires else None),
+                    ('spar_sessions_today', user.spar_sessions_today),
+                    ('spar_day_date', user.spar_day_date),
+                    ('sacrifice_day_date', user.sacrifice_day_date),
+                    ('sacrifice_count_today', user.sacrifice_count_today)
+                ]
+
+                for field_name, field_value in optional_fields:
+                    try:
+                        conn.execute(f"UPDATE users SET {field_name}=? WHERE user_id=?", 
+                                   (field_value, user.user_id))
+                    except Exception as e:
+                        # Log but don't fail - column might not exist yet
+                        logging.warning(f"Failed to update {field_name} for user {user.user_id}: {e}")
+                        continue
+
                 conn.commit()
                 return True
             finally:
