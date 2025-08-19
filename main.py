@@ -426,6 +426,111 @@ def calculate_percentage_stat_boosts(sacrificed_beast):
         'speed': max(1, int(stats.speed * percent))
     }
 
+def get_base_stats_for_rarity(rarity):
+    """Get base stats for each rarity - adjust these if needed"""
+    base_stats = {
+        BeastRarity.COMMON: {'hp': 100, 'attack': 20, 'defense': 15, 'speed': 25},
+        BeastRarity.UNCOMMON: {'hp': 130, 'attack': 30, 'defense': 20, 'speed': 30},
+        BeastRarity.RARE: {'hp': 180, 'attack': 40, 'defense': 25, 'speed': 35},
+        BeastRarity.EPIC: {'hp': 300, 'attack': 70, 'defense': 35, 'speed': 40},
+        BeastRarity.LEGENDARY: {'hp': 500, 'attack': 120, 'defense': 50, 'speed': 45},
+        BeastRarity.MYTHIC: {'hp': 800, 'attack': 180, 'defense': 70, 'speed': 50}
+    }
+    return base_stats[rarity]
+
+
+async def fix_all_beast_stats_preserve_boosts(bot):
+    """Recalculate beast stats while preserving sacrifice/spar boosts"""
+    print("🔄 Starting enhanced beast stat migration (preserving boosts)...")
+
+    try:
+        conn = bot.db._get_connection()
+        user_cursor = conn.execute('SELECT user_id FROM users')
+        all_users = user_cursor.fetchall()
+        conn.close()
+
+        total_beasts_fixed = 0
+        users_processed = 0
+
+        for user_row in all_users:
+            try:
+                user_id = user_row['user_id']
+                user_beasts = await bot.db.get_user_beasts(user_id)
+
+                for beast_id, beast in user_beasts:
+                    # ✅ PRESERVE current stats (includes all boosts)
+                    preserved_stats = {
+                        'hp': beast.stats.hp,
+                        'max_hp': beast.stats.max_hp, 
+                        'attack': beast.stats.attack,
+                        'defense': beast.stats.defense,
+                        'speed': beast.stats.speed
+                    }
+
+                    target_level = beast.stats.level
+                    current_exp = beast.stats.exp
+
+                    # Reset to base stats
+                    base_stats = get_base_stats_for_rarity(beast.rarity)
+                    beast.stats.hp = base_stats['hp']
+                    beast.stats.max_hp = base_stats['hp']
+                    beast.stats.attack = base_stats['attack'] 
+                    beast.stats.defense = base_stats['defense']
+                    beast.stats.speed = base_stats['speed']
+                    beast.stats.level = 1
+                    beast.stats.exp = 0
+
+                    # Simulate proper level-ups for base stats
+                    for level in range(1, target_level):
+                        leveled_up, bonus_level, stat_gains = beast.stats.level_up(beast.rarity)
+                        if not leveled_up:
+                            break
+
+                    # ✅ CALCULATE and PRESERVE boosts
+                    boosts = {}
+                    for stat in ['max_hp', 'attack', 'defense', 'speed']:
+                        base_after_levelup = getattr(beast.stats, stat)
+                        preserved_value = preserved_stats[stat]
+                        boost = preserved_value - base_after_levelup
+                        boosts[stat] = max(0, boost)  # Only positive boosts
+
+                    # HP boost calculation (special handling)
+                    hp_boost = preserved_stats['hp'] - beast.stats.max_hp
+                    boosts['hp'] = max(0, hp_boost)
+
+                    # ✅ APPLY preserved boosts on top of base stats
+                    beast.stats.max_hp += boosts['max_hp']
+                    beast.stats.hp = beast.stats.max_hp + boosts['hp']  # Full HP + any HP boosts
+                    beast.stats.attack += boosts['attack']
+                    beast.stats.defense += boosts['defense']
+                    beast.stats.speed += boosts['speed']
+
+                    # Restore current XP
+                    beast.stats.exp = current_exp
+
+                    await bot.db.update_beast(beast_id, beast)
+                    total_beasts_fixed += 1
+
+                    # Log significant boosts for verification
+                    total_boost = sum(boosts.values())
+                    if total_boost > 50:  # Significant boost detected
+                        print(f"🎯 Beast #{beast_id} ({beast.name}) preserved {total_boost:.0f} total stat boosts")
+
+                users_processed += 1
+                if users_processed % 10 == 0:
+                    print(f"📊 Processed {users_processed} users, {total_beasts_fixed} beasts fixed")
+
+            except Exception as e:
+                print(f"❌ Error processing user {user_row['user_id']}: {e}")
+                continue
+
+        print(f"✅ Enhanced stat migration complete! {total_beasts_fixed} beasts fixed with boosts preserved")
+        return True
+
+    except Exception as e:
+        print(f"❌ Enhanced stat migration failed: {e}")
+        return False
+
 
 # Data Models
 @dataclass
@@ -3495,13 +3600,78 @@ async def sacrifice_beast(ctx, beast_id: int):
                                     "## 🌟 SHRINE ACCEPTS OFFERING 🌟\n"
                                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                                     inline=False)
+
+            # Basic rewards
+            reward_text = f"💎 **{beast_stones_reward:,} Beast Stones** added!\n"
+            if active_beast:
+                reward_text += f"⚡ **{sacrifice_xp:,} XP** transferred to {active_beast.name}"
+            else:
+                reward_text += f"💀 **{sacrifice_xp:,} XP** dispersed (no active beast)"
+
             success_embed.add_field(
                 name="💰 Rewards Granted",
-                value=f"💎 **{beast_stones_reward:,} Beast Stones** added!\n"
-                f"⚡ **{sacrifice_xp:,} XP** {'transferred to active beast' if active_beast else 'dispersed'}",
+                value=reward_text,
                 inline=False)
 
+            # Show stat boosts if they were granted
+            if grant_stat_boosts and active_beast:
+                stat_boosts = calculate_percentage_stat_boosts(target_beast)
+                boost_text = []
+                for stat, boost_value in stat_boosts.items():
+                    if stat == 'hp':
+                        boost_text.append(f"❤️ **Max HP:** +{boost_value}")
+                    elif stat == 'attack':
+                        boost_text.append(f"⚔️ **Attack:** +{boost_value}")
+                    elif stat == 'defense':
+                        boost_text.append(f"🛡️ **Defense:** +{boost_value}")
+                    elif stat == 'speed':
+                        boost_text.append(f"💨 **Speed:** +{boost_value}")
+
+                success_embed.add_field(
+                    name="🎯 STAT BOOSTS APPLIED!",
+                    value=f"**{active_beast.name}** received permanent stat bonuses!\n" + "\n".join(boost_text),
+                    inline=False)
+
+                # Show updated power level
+                success_embed.add_field(
+                    name="📊 Power Update",
+                    value=f"**New Power Level:** {active_beast.power_level:,}\n"
+                          f"🌟 **Permanent gains from sacrifice!**",
+                    inline=True)
+
+            elif active_beast and has_sufficient_bond(target_beast) and not user.can_get_stat_boosts():
+                # Beast had sufficient bond but daily limit reached
+                success_embed.add_field(
+                    name="⏰ Daily Limit Reached",
+                    value=f"**{target_beast.name}** had sufficient bond (12+ hours)\n"
+                          f"But you've used all 5 daily stat boosts!\n"
+                          f"✅ Still received XP and beast stones",
+                    inline=False)
+
+            elif active_beast and not has_sufficient_bond(target_beast):
+                # Beast didn't have sufficient bond
+                owned_time = datetime.datetime.now() - target_beast.caught_at if target_beast.caught_at else datetime.timedelta(0)
+                hours_owned = owned_time.total_seconds() / 3600
+                hours_needed = max(0, 12 - hours_owned)
+
+                success_embed.add_field(
+                    name="🕐 Insufficient Bond",
+                    value=f"**{target_beast.name}** needed 12+ hours ownership for stat boosts\n"
+                          f"⏰ Was owned for: {hours_owned:.1f} hours\n"
+                          f"❓ Needed: {hours_needed:.1f} more hours\n"
+                          f"✅ Still received XP and beast stones",
+                    inline=False)
+
+            # Show remaining daily stat boosts
+            if active_beast:
+                remaining_boosts = 5 - user.sacrifice_count_today if user.can_get_stat_boosts() else 0
+                success_embed.add_field(
+                    name="📅 Daily Status",
+                    value=f"**Stat Boosts Remaining Today:** {remaining_boosts}/5",
+                    inline=True)
+
             await ctx.bot.safe_edit_message(message, embed=success_embed)
+
         else:
             # Ritual abandoned
             abandoned_embed = discord.Embed(color=0x808080)
@@ -6949,6 +7119,258 @@ async def adopt_mythic_beast(ctx):
     )
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
+@commands.command(name='givexp')
+@commands.has_permissions(administrator=True)
+async def give_exp(ctx, target: str, amount: int = 0):
+    """Give XP to users' active beasts (admin only):
+    - `!givexp all <amount>` - Give XP to ALL users' active beasts
+    - `!givexp @user <amount>` - Give XP to a specific user's active beast
+    """
+    if amount <= 0:
+        embed = discord.Embed(
+            title="❌ Invalid Amount", 
+            description="Please specify a positive amount of XP to give.",
+            color=0xFF0000)
+        embed.add_field(name="Usage Examples",
+                        value=f"`{ctx.bot.config.prefix}givexp all 2000`\n"
+                              f"`{ctx.bot.config.prefix}givexp @username 1000`",
+                        inline=False)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    if target.lower() == 'all':
+        # Mass XP distribution to ALL users' active beasts
+        embed = discord.Embed(
+            title="⚠️ Mass XP Distribution",
+            description=f"This will give **{amount:,} XP** to every user's **active beast**.\n"
+                       "Only users with active beasts will receive XP.\n\n"
+                       "React with ✅ to confirm or ❌ to cancel.",
+            color=0xFF8800)
+
+        message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        await ctx.bot.safe_add_reaction(message, "✅")
+        await ctx.bot.safe_add_reaction(message, "❌")
+
+        def check(reaction, user):
+            return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"] 
+                    and reaction.message.id == message.id)
+
+        try:
+            reaction, user = await ctx.bot.wait_for('reaction_add', timeout=30.0, check=check)
+
+            if str(reaction.emoji) == "✅":
+                embed = discord.Embed(
+                    title="🔄 Distributing XP...",
+                    description=f"Giving {amount:,} XP to all active beasts. This may take a few minutes.",
+                    color=0xFFAA00)
+                await ctx.bot.safe_edit_message(message, embed=embed)
+
+                # Fetch all registered users
+                conn = ctx.bot.db._get_connection()
+                user_cursor = conn.execute('SELECT user_id FROM users')
+                all_users = user_cursor.fetchall()
+                conn.close()
+
+                users_updated = 0
+                users_skipped_no_active = 0
+                users_skipped_no_beasts = 0
+                total_level_ups = 0
+
+                for user_row in all_users:
+                    try:
+                        user_id = user_row['user_id']
+                        user_data = await ctx.bot.get_or_create_user(user_id, str(user_id))
+
+                        # Check if user has an active beast
+                        if not user_data.active_beast_id:
+                            users_skipped_no_active += 1
+                            continue
+
+                        # Get user's beasts
+                        user_beasts = await ctx.bot.db.get_user_beasts(user_id)
+                        if not user_beasts:
+                            users_skipped_no_beasts += 1
+                            continue
+
+                        # Find the active beast
+                        active_beast = None
+                        active_beast_id = None
+                        for beast_id, beast in user_beasts:
+                            if beast_id == user_data.active_beast_id:
+                                active_beast = beast
+                                active_beast_id = beast_id
+                                break
+
+                        # Give XP to active beast only
+                        if active_beast:
+                            old_level = active_beast.stats.level
+                            level_ups = active_beast.stats.add_exp(amount, active_beast.rarity)
+                            await ctx.bot.db.update_beast(active_beast_id, active_beast)
+
+                            users_updated += 1
+                            if level_ups:
+                                total_level_ups += len(level_ups)
+                        else:
+                            users_skipped_no_active += 1
+
+                        # Progress update every 25 users
+                        if users_updated % 25 == 0:
+                            print(f"📊 Processed {users_updated} users with active beasts")
+
+                    except Exception as e:
+                        print(f"❌ Error processing user {user_row['user_id']}: {e}")
+                        continue
+
+                # Success message
+                embed = discord.Embed(
+                    title="✅ Mass XP Distribution Complete!",
+                    description=f"Successfully distributed **{amount:,} XP** to active beasts!",
+                    color=0x00FF00)
+
+                embed.add_field(name="📊 Distribution Stats",
+                                value=f"**Active Beasts Updated:** {users_updated:,}\n"
+                                      f"**Total Level-Ups:** {total_level_ups:,}\n"
+                                      f"**Total XP Distributed:** {amount * users_updated:,}",
+                                inline=True)
+
+                embed.add_field(name="⏭️ Users Skipped",
+                                value=f"**No Active Beast:** {users_skipped_no_active:,}\n"
+                                      f"**No Beasts:** {users_skipped_no_beasts:,}\n"
+                                      f"**Total Processed:** {len(all_users):,}",
+                                inline=True)
+
+                embed.add_field(name="🎁 Gift Details",
+                                value=f"**XP Per Active Beast:** {amount:,}\n"
+                                      f"**Reason:** Admin Gift\n"
+                                      f"**Target:** Active Beasts Only",
+                                inline=False)
+
+                embed.set_footer(text=f"Mass XP distribution by {ctx.author.display_name}")
+
+            else:
+                embed = discord.Embed(
+                    title="❌ Mass Distribution Cancelled",
+                    description="XP distribution has been cancelled.",
+                    color=0x808080)
+
+        except asyncio.TimeoutError:
+            embed = discord.Embed(
+                title="⏰ Distribution Timeout",
+                description="Distribution confirmation timed out.",
+                color=0x808080)
+
+        await ctx.bot.safe_edit_message(message, embed=embed)
+
+    else:
+        # Single user XP gift (active beast only)
+        if not ctx.message.mentions:
+            embed = discord.Embed(
+                title="❌ No User Mentioned",
+                description="Please mention a user to give XP to, or use 'all' for everyone.",
+                color=0xFF0000)
+            embed.add_field(name="Usage Examples",
+                            value=f"`{ctx.bot.config.prefix}givexp @username 1000`\n"
+                                  f"`{ctx.bot.config.prefix}givexp all 2000`",
+                            inline=False)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+        target_member = ctx.message.mentions[0]
+        user_id = target_member.id
+
+        # Get user data
+        user_data = await ctx.bot.get_or_create_user(user_id, str(target_member))
+
+        # Check if user has an active beast
+        if not user_data.active_beast_id:
+            embed = discord.Embed(
+                title="❌ No Active Beast",
+                description=f"**{target_member.display_name}** doesn't have an active beast set.\n"
+                           f"They need to use `{ctx.bot.config.prefix}active <beast_id>` first.",
+                color=0xFF0000)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+        # Get user's beasts
+        user_beasts = await ctx.bot.db.get_user_beasts(user_id)
+        if not user_beasts:
+            embed = discord.Embed(
+                title="❌ No Beasts Found",
+                description=f"**{target_member.display_name}** doesn't have any beasts.",
+                color=0xFF0000)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+        # Find the active beast
+        active_beast = None
+        active_beast_id = None
+        for beast_id, beast in user_beasts:
+            if beast_id == user_data.active_beast_id:
+                active_beast = beast
+                active_beast_id = beast_id
+                break
+
+        if not active_beast:
+            embed = discord.Embed(
+                title="❌ Active Beast Not Found",
+                description=f"**{target_member.display_name}**'s active beast couldn't be found.\n"
+                           f"Their active beast ID might be invalid.",
+                color=0xFF0000)
+            await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+            return
+
+        # Apply XP to active beast only
+        old_level = active_beast.stats.level
+        level_ups = active_beast.stats.add_exp(amount, active_beast.rarity)
+        await ctx.bot.db.update_beast(active_beast_id, active_beast)
+
+        # Success embed
+        embed = discord.Embed(
+            title="🎁 XP Gift Delivered!",
+            description=f"**{target_member.display_name}**'s active beast received **{amount:,} XP**!",
+            color=active_beast.rarity.color)
+
+        embed.add_field(name="🐉 Active Beast",
+                        value=f"**{active_beast.name}** {active_beast.rarity.emoji}\n"
+                              f"Level {old_level} → {active_beast.stats.level}",
+                        inline=True)
+
+        embed.add_field(name="⚡ XP Details",
+                        value=f"**XP Received:** {amount:,}\n"
+                              f"**Current XP:** {active_beast.stats.exp:,}\n"
+                              f"**Power Level:** {active_beast.power_level:,}",
+                        inline=True)
+
+        if level_ups:
+            levels_gained = len(level_ups)
+            embed.add_field(name="🎉 Level-Up Achievement!",
+                            value=f"**{active_beast.name}** gained **{levels_gained} level(s)**!\n"
+                                  "🌟 The XP gift triggered level-ups!",
+                            inline=False)
+
+            # Show stat gains from level-ups
+            if level_ups:
+                last_gains = level_ups[-1][2]  # Get stat gains from last level-up
+                stat_text = []
+                for stat, gain in last_gains.items():
+                    if not stat.startswith('bonus_'):
+                        stat_text.append(f"{stat.title()}: +{gain}")
+
+                if stat_text:
+                    embed.add_field(name="📈 Recent Stat Gains",
+                                    value="\n".join(stat_text[:4]),  # Show first 4 stats
+                                    inline=True)
+        else:
+            embed.add_field(name="📊 No Level-Up",
+                            value=f"**{active_beast.name}** received XP but didn't level up yet.\n"
+                                  f"Keep growing stronger! 💪",
+                            inline=False)
+
+        embed.set_footer(text=f"XP gift from {ctx.author.display_name} • Active beast only")
+
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
+
 
 @commands.command(name='adoption_status', aliases=['adoptstatus'])
 async def adoption_status(ctx):
@@ -7111,6 +7533,66 @@ async def migrate_xp_curve(ctx):
 
     await ctx.bot.safe_edit_message(message, embed=embed)
 
+@commands.command(name='migrate_stats_enhanced')
+@commands.has_permissions(administrator=True)
+async def migrate_beast_stats_enhanced(ctx):
+    """Fix beast stats while preserving sacrifice/spar boosts (admin only)"""
+    embed = discord.Embed(
+        title="⚠️ Enhanced Beast Stat Migration",
+        description="This will recalculate ALL beast stats while **preserving**:\n"
+                    "✅ Sacrifice stat boosts\n"
+                    "✅ Spar training gains\n" 
+                    "✅ All extra stat bonuses\n\n"
+                    "**This fixes weak high-level beasts without losing boosts!**\n\n"
+                    "React with ✅ to confirm or ❌ to cancel.",
+        color=0xFF8800)
+
+    message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+    await ctx.bot.safe_add_reaction(message, "✅")
+    await ctx.bot.safe_add_reaction(message, "❌")
+
+    def check(reaction, user):
+        return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"] 
+                and reaction.message.id == message.id)
+
+    try:
+        reaction, user = await ctx.bot.wait_for('reaction_add', timeout=30.0, check=check)
+
+        if str(reaction.emoji) == "✅":
+            embed = discord.Embed(
+                title="🔄 Enhanced Migration in Progress...",
+                description="Recalculating stats while preserving all boosts...",
+                color=0xFFAA00)
+            await ctx.bot.safe_edit_message(message, embed=embed)
+
+            success = await fix_all_beast_stats_preserve_boosts(ctx.bot)
+
+            if success:
+                embed = discord.Embed(
+                    title="✅ Enhanced Migration Complete!",
+                    description="All beast stats fixed **with boosts preserved**!\n"
+                               "🎯 Sacrifice boosts: **Preserved**\n"
+                               "💪 Spar training gains: **Preserved**\n"
+                               "⚡ High-level stats: **Fixed**",
+                    color=0x00FF00)
+            else:
+                embed = discord.Embed(
+                    title="❌ Migration Failed",
+                    description="Enhanced migration encountered errors. Check logs.",
+                    color=0xFF0000)
+        else:
+            embed = discord.Embed(
+                title="❌ Migration Cancelled", 
+                description="Enhanced migration cancelled.",
+                color=0x808080)
+
+    except asyncio.TimeoutError:
+        embed = discord.Embed(
+            title="⏰ Migration Timeout",
+            description="Migration confirmation timed out.",
+            color=0x808080)
+
+    await ctx.bot.safe_edit_message(message, embed=embed)
 
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
@@ -7649,6 +8131,8 @@ def main():
     bot.add_command(daily_status)
     bot.add_command(sacrifice_status)
     bot.add_command(migrate_xp_curve)
+    bot.add_command(migrate_beast_stats_enhanced)
+    bot.add_command(give_exp)
 
     # RETRY LOGIC INSIDE THE FUNCTION WHERE VARIABLES ARE AVAILABLE
     max_retries = 3
