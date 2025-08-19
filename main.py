@@ -426,21 +426,52 @@ def calculate_percentage_stat_boosts(sacrificed_beast):
         'speed': max(1, int(stats.speed * percent))
     }
 
+
 def get_base_stats_for_rarity(rarity):
     """Get base stats for each rarity - adjust these if needed"""
     base_stats = {
-        BeastRarity.COMMON: {'hp': 100, 'attack': 20, 'defense': 15, 'speed': 25},
-        BeastRarity.UNCOMMON: {'hp': 130, 'attack': 30, 'defense': 20, 'speed': 30},
-        BeastRarity.RARE: {'hp': 180, 'attack': 40, 'defense': 25, 'speed': 35},
-        BeastRarity.EPIC: {'hp': 300, 'attack': 70, 'defense': 35, 'speed': 40},
-        BeastRarity.LEGENDARY: {'hp': 500, 'attack': 120, 'defense': 50, 'speed': 45},
-        BeastRarity.MYTHIC: {'hp': 800, 'attack': 180, 'defense': 70, 'speed': 50}
+        BeastRarity.COMMON: {
+            'hp': 100,
+            'attack': 20,
+            'defense': 15,
+            'speed': 25
+        },
+        BeastRarity.UNCOMMON: {
+            'hp': 130,
+            'attack': 30,
+            'defense': 20,
+            'speed': 30
+        },
+        BeastRarity.RARE: {
+            'hp': 180,
+            'attack': 40,
+            'defense': 25,
+            'speed': 35
+        },
+        BeastRarity.EPIC: {
+            'hp': 300,
+            'attack': 70,
+            'defense': 35,
+            'speed': 40
+        },
+        BeastRarity.LEGENDARY: {
+            'hp': 500,
+            'attack': 120,
+            'defense': 50,
+            'speed': 45
+        },
+        BeastRarity.MYTHIC: {
+            'hp': 800,
+            'attack': 180,
+            'defense': 70,
+            'speed': 50
+        }
     }
     return base_stats[rarity]
 
 
 async def fix_all_beast_stats_preserve_boosts(bot):
-    """Recalculate beast stats while preserving sacrifice/spar boosts"""
+    """Recalculate beast stats while preserving sacrifice/spar boosts - FIXED VERSION"""
     print("🔄 Starting enhanced beast stat migration (preserving boosts)...")
 
     try:
@@ -461,30 +492,66 @@ async def fix_all_beast_stats_preserve_boosts(bot):
                     # ✅ PRESERVE current stats (includes all boosts)
                     preserved_stats = {
                         'hp': beast.stats.hp,
-                        'max_hp': beast.stats.max_hp, 
+                        'max_hp': beast.stats.max_hp,
                         'attack': beast.stats.attack,
                         'defense': beast.stats.defense,
                         'speed': beast.stats.speed
                     }
 
-                    target_level = beast.stats.level
+                    # ✅ FIXED: Calculate TOTAL XP including all previous levels
+                    base_requirements = {
+                        BeastRarity.COMMON: 100,
+                        BeastRarity.UNCOMMON: 150,
+                        BeastRarity.RARE: 200,
+                        BeastRarity.EPIC: 300,
+                        BeastRarity.LEGENDARY: 500,
+                        BeastRarity.MYTHIC: 800
+                    }
+
+                    base_req = base_requirements[beast.rarity]
+                    current_level = beast.stats.level
                     current_exp = beast.stats.exp
+
+                    # Calculate total XP (previous levels + current XP)
+                    total_xp = current_exp
+                    for lvl in range(1, current_level):
+                        total_xp += int(base_req * (1.5**(lvl - 1)))
+
+                    print(
+                        f"Beast {beast.name} (ID: {beast_id}) - Level {current_level}, Current XP: {current_exp}, Total XP: {total_xp}"
+                    )
 
                     # Reset to base stats
                     base_stats = get_base_stats_for_rarity(beast.rarity)
                     beast.stats.hp = base_stats['hp']
                     beast.stats.max_hp = base_stats['hp']
-                    beast.stats.attack = base_stats['attack'] 
+                    beast.stats.attack = base_stats['attack']
                     beast.stats.defense = base_stats['defense']
                     beast.stats.speed = base_stats['speed']
                     beast.stats.level = 1
                     beast.stats.exp = 0
 
-                    # Simulate proper level-ups for base stats
-                    for level in range(1, target_level):
-                        leveled_up, bonus_level, stat_gains = beast.stats.level_up(beast.rarity)
-                        if not leveled_up:
+                    # ✅ FIXED: Recalculate correct level from total XP
+                    level = 1
+                    remaining_xp = total_xp
+
+                    # Level up using the level_up method until XP is exhausted
+                    while True:
+                        required = int(base_req * (1.5**(level - 1)))
+                        if remaining_xp >= required:
+                            remaining_xp -= required
+                            leveled_up, bonus_level, stat_gains = beast.stats.level_up(
+                                beast.rarity)
+                            if leveled_up:
+                                level += 1
+                            else:
+                                break
+                        else:
                             break
+
+                    # ✅ FIXED: Set final level and remaining XP correctly
+                    beast.stats.level = level
+                    beast.stats.exp = remaining_xp
 
                     # ✅ CALCULATE and PRESERVE boosts
                     boosts = {}
@@ -500,31 +567,42 @@ async def fix_all_beast_stats_preserve_boosts(bot):
 
                     # ✅ APPLY preserved boosts on top of base stats
                     beast.stats.max_hp += boosts['max_hp']
-                    beast.stats.hp = beast.stats.max_hp + boosts['hp']  # Full HP + any HP boosts
+                    beast.stats.hp = beast.stats.max_hp + boosts[
+                        'hp']  # Full HP + any HP boosts
                     beast.stats.attack += boosts['attack']
                     beast.stats.defense += boosts['defense']
                     beast.stats.speed += boosts['speed']
-
-                    # Restore current XP
-                    beast.stats.exp = current_exp
+                    beast.stats.hp = min(beast.stats.hp, beast.stats.max_hp)
 
                     await bot.db.update_beast(beast_id, beast)
                     total_beasts_fixed += 1
 
+                    # Log level changes for verification
+                    if current_level != beast.stats.level:
+                        print(
+                            f"🎯 Beast #{beast_id} ({beast.name}) level: {current_level} → {beast.stats.level}, XP: {beast.stats.exp}"
+                        )
+
                     # Log significant boosts for verification
                     total_boost = sum(boosts.values())
                     if total_boost > 50:  # Significant boost detected
-                        print(f"🎯 Beast #{beast_id} ({beast.name}) preserved {total_boost:.0f} total stat boosts")
+                        print(
+                            f"🎯 Beast #{beast_id} ({beast.name}) preserved {total_boost:.0f} total stat boosts"
+                        )
 
                 users_processed += 1
                 if users_processed % 10 == 0:
-                    print(f"📊 Processed {users_processed} users, {total_beasts_fixed} beasts fixed")
+                    print(
+                        f"📊 Processed {users_processed} users, {total_beasts_fixed} beasts fixed"
+                    )
 
             except Exception as e:
                 print(f"❌ Error processing user {user_row['user_id']}: {e}")
                 continue
 
-        print(f"✅ Enhanced stat migration complete! {total_beasts_fixed} beasts fixed with boosts preserved")
+        print(
+            f"✅ Enhanced stat migration complete! {total_beasts_fixed} beasts fixed with boosts preserved"
+        )
         return True
 
     except Exception as e:
@@ -1091,7 +1169,8 @@ class SQLiteDatabase(DatabaseInterface):
         """Get user by ID"""
         conn = self._get_connection()
         try:
-            cursor = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+            cursor = conn.execute('SELECT * FROM users WHERE user_id = ?',
+                                  (user_id, ))
             row = cursor.fetchone()
             if row:
                 # Helper function to safely get values
@@ -1104,7 +1183,8 @@ class SQLiteDatabase(DatabaseInterface):
                 def safe_datetime(field_name):
                     try:
                         value = row[field_name]
-                        return datetime.datetime.fromisoformat(value) if value else None
+                        return datetime.datetime.fromisoformat(
+                            value) if value else None
                     except (KeyError, IndexError):
                         return None
 
@@ -1120,9 +1200,12 @@ class SQLiteDatabase(DatabaseInterface):
                     total_battles=row['total_battles'],
                     wins=row['wins'],
                     losses=row['losses'],
-                    has_used_adopt_legend=bool(safe_get('has_used_adopt_legend', False)),
-                    has_used_adopt_mythic=bool(safe_get('has_used_adopt_mythic', False)),
-                    created_at=datetime.datetime.fromisoformat(row['created_at']),
+                    has_used_adopt_legend=bool(
+                        safe_get('has_used_adopt_legend', False)),
+                    has_used_adopt_mythic=bool(
+                        safe_get('has_used_adopt_mythic', False)),
+                    created_at=datetime.datetime.fromisoformat(
+                        row['created_at']),
 
                     # Optional fields with safe access
                     battle_xp_day=safe_get('battle_xp_day'),
@@ -1134,8 +1217,7 @@ class SQLiteDatabase(DatabaseInterface):
                     spar_sessions_today=safe_get('spar_sessions_today', 0),
                     spar_day_date=safe_get('spar_day_date'),
                     sacrifice_day_date=safe_get('sacrifice_day_date'),
-                    sacrifice_count_today=safe_get('sacrifice_count_today', 0)
-                )
+                    sacrifice_count_today=safe_get('sacrifice_count_today', 0))
             return None
         finally:
             conn.close()
@@ -1185,20 +1267,24 @@ class SQLiteDatabase(DatabaseInterface):
                     (user.username, user.spirit_stones,
                      user.last_daily.isoformat() if user.last_daily else None,
                      user.last_adopt.isoformat() if user.last_adopt else None,
-                     user.last_xp_gain.isoformat() if user.last_xp_gain else None, 
-                     user.active_beast_id, user.total_catches,
-                     user.total_battles, user.wins, user.losses,
-                     user.has_used_adopt_legend, user.has_used_adopt_mythic,
-                     user.user_id))
+                     user.last_xp_gain.isoformat()
+                     if user.last_xp_gain else None, user.active_beast_id,
+                     user.total_catches, user.total_battles, user.wins,
+                     user.losses, user.has_used_adopt_legend,
+                     user.has_used_adopt_mythic, user.user_id))
 
                 # Then try to update optional fields one by one
                 optional_fields = [
                     ('battle_xp_day', user.battle_xp_day),
                     ('battle_xp_count', user.battle_xp_count),
-                    ('last_feed', user.last_feed.isoformat() if user.last_feed else None),
-                    ('last_groom', user.last_groom.isoformat() if user.last_groom else None),
-                    ('last_first_win', user.last_first_win.isoformat() if user.last_first_win else None),
-                    ('xp_boost_expires', user.xp_boost_expires.isoformat() if user.xp_boost_expires else None),
+                    ('last_feed',
+                     user.last_feed.isoformat() if user.last_feed else None),
+                    ('last_groom',
+                     user.last_groom.isoformat() if user.last_groom else None),
+                    ('last_first_win', user.last_first_win.isoformat()
+                     if user.last_first_win else None),
+                    ('xp_boost_expires', user.xp_boost_expires.isoformat()
+                     if user.xp_boost_expires else None),
                     ('spar_sessions_today', user.spar_sessions_today),
                     ('spar_day_date', user.spar_day_date),
                     ('sacrifice_day_date', user.sacrifice_day_date),
@@ -1207,11 +1293,14 @@ class SQLiteDatabase(DatabaseInterface):
 
                 for field_name, field_value in optional_fields:
                     try:
-                        conn.execute(f"UPDATE users SET {field_name}=? WHERE user_id=?", 
-                                   (field_value, user.user_id))
+                        conn.execute(
+                            f"UPDATE users SET {field_name}=? WHERE user_id=?",
+                            (field_value, user.user_id))
                     except Exception as e:
                         # Log but don't fail - column might not exist yet
-                        logging.warning(f"Failed to update {field_name} for user {user.user_id}: {e}")
+                        logging.warning(
+                            f"Failed to update {field_name} for user {user.user_id}: {e}"
+                        )
                         continue
 
                 conn.commit()
@@ -3608,10 +3697,9 @@ async def sacrifice_beast(ctx, beast_id: int):
             else:
                 reward_text += f"💀 **{sacrifice_xp:,} XP** dispersed (no active beast)"
 
-            success_embed.add_field(
-                name="💰 Rewards Granted",
-                value=reward_text,
-                inline=False)
+            success_embed.add_field(name="💰 Rewards Granted",
+                                    value=reward_text,
+                                    inline=False)
 
             # Show stat boosts if they were granted
             if grant_stat_boosts and active_beast:
@@ -3629,45 +3717,54 @@ async def sacrifice_beast(ctx, beast_id: int):
 
                 success_embed.add_field(
                     name="🎯 STAT BOOSTS APPLIED!",
-                    value=f"**{active_beast.name}** received permanent stat bonuses!\n" + "\n".join(boost_text),
+                    value=
+                    f"**{active_beast.name}** received permanent stat bonuses!\n"
+                    + "\n".join(boost_text),
                     inline=False)
 
                 # Show updated power level
                 success_embed.add_field(
                     name="📊 Power Update",
                     value=f"**New Power Level:** {active_beast.power_level:,}\n"
-                          f"🌟 **Permanent gains from sacrifice!**",
+                    f"🌟 **Permanent gains from sacrifice!**",
                     inline=True)
 
-            elif active_beast and has_sufficient_bond(target_beast) and not user.can_get_stat_boosts():
+            elif active_beast and has_sufficient_bond(
+                    target_beast) and not user.can_get_stat_boosts():
                 # Beast had sufficient bond but daily limit reached
                 success_embed.add_field(
                     name="⏰ Daily Limit Reached",
-                    value=f"**{target_beast.name}** had sufficient bond (12+ hours)\n"
-                          f"But you've used all 5 daily stat boosts!\n"
-                          f"✅ Still received XP and beast stones",
+                    value=
+                    f"**{target_beast.name}** had sufficient bond (12+ hours)\n"
+                    f"But you've used all 5 daily stat boosts!\n"
+                    f"✅ Still received XP and beast stones",
                     inline=False)
 
             elif active_beast and not has_sufficient_bond(target_beast):
                 # Beast didn't have sufficient bond
-                owned_time = datetime.datetime.now() - target_beast.caught_at if target_beast.caught_at else datetime.timedelta(0)
+                owned_time = datetime.datetime.now(
+                ) - target_beast.caught_at if target_beast.caught_at else datetime.timedelta(
+                    0)
                 hours_owned = owned_time.total_seconds() / 3600
                 hours_needed = max(0, 12 - hours_owned)
 
                 success_embed.add_field(
                     name="🕐 Insufficient Bond",
-                    value=f"**{target_beast.name}** needed 12+ hours ownership for stat boosts\n"
-                          f"⏰ Was owned for: {hours_owned:.1f} hours\n"
-                          f"❓ Needed: {hours_needed:.1f} more hours\n"
-                          f"✅ Still received XP and beast stones",
+                    value=
+                    f"**{target_beast.name}** needed 12+ hours ownership for stat boosts\n"
+                    f"⏰ Was owned for: {hours_owned:.1f} hours\n"
+                    f"❓ Needed: {hours_needed:.1f} more hours\n"
+                    f"✅ Still received XP and beast stones",
                     inline=False)
 
             # Show remaining daily stat boosts
             if active_beast:
-                remaining_boosts = 5 - user.sacrifice_count_today if user.can_get_stat_boosts() else 0
+                remaining_boosts = 5 - user.sacrifice_count_today if user.can_get_stat_boosts(
+                ) else 0
                 success_embed.add_field(
                     name="📅 Daily Status",
-                    value=f"**Stat Boosts Remaining Today:** {remaining_boosts}/5",
+                    value=
+                    f"**Stat Boosts Remaining Today:** {remaining_boosts}/5",
                     inline=True)
 
             await ctx.bot.safe_edit_message(message, embed=success_embed)
@@ -7119,6 +7216,7 @@ async def adopt_mythic_beast(ctx):
     )
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
+
 @commands.command(name='givexp')
 @commands.has_permissions(administrator=True)
 async def give_exp(ctx, target: str, amount: int = 0):
@@ -7128,12 +7226,12 @@ async def give_exp(ctx, target: str, amount: int = 0):
     """
     if amount <= 0:
         embed = discord.Embed(
-            title="❌ Invalid Amount", 
+            title="❌ Invalid Amount",
             description="Please specify a positive amount of XP to give.",
             color=0xFF0000)
         embed.add_field(name="Usage Examples",
                         value=f"`{ctx.bot.config.prefix}givexp all 2000`\n"
-                              f"`{ctx.bot.config.prefix}givexp @username 1000`",
+                        f"`{ctx.bot.config.prefix}givexp @username 1000`",
                         inline=False)
         await ctx.bot.safe_send_message(ctx.channel, embed=embed)
         return
@@ -7142,9 +7240,10 @@ async def give_exp(ctx, target: str, amount: int = 0):
         # Mass XP distribution to ALL users' active beasts
         embed = discord.Embed(
             title="⚠️ Mass XP Distribution",
-            description=f"This will give **{amount:,} XP** to every user's **active beast**.\n"
-                       "Only users with active beasts will receive XP.\n\n"
-                       "React with ✅ to confirm or ❌ to cancel.",
+            description=
+            f"This will give **{amount:,} XP** to every user's **active beast**.\n"
+            "Only users with active beasts will receive XP.\n\n"
+            "React with ✅ to confirm or ❌ to cancel.",
             color=0xFF8800)
 
         message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
@@ -7152,16 +7251,19 @@ async def give_exp(ctx, target: str, amount: int = 0):
         await ctx.bot.safe_add_reaction(message, "❌")
 
         def check(reaction, user):
-            return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"] 
+            return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
                     and reaction.message.id == message.id)
 
         try:
-            reaction, user = await ctx.bot.wait_for('reaction_add', timeout=30.0, check=check)
+            reaction, user = await ctx.bot.wait_for('reaction_add',
+                                                    timeout=30.0,
+                                                    check=check)
 
             if str(reaction.emoji) == "✅":
                 embed = discord.Embed(
                     title="🔄 Distributing XP...",
-                    description=f"Giving {amount:,} XP to all active beasts. This may take a few minutes.",
+                    description=
+                    f"Giving {amount:,} XP to all active beasts. This may take a few minutes.",
                     color=0xFFAA00)
                 await ctx.bot.safe_edit_message(message, embed=embed)
 
@@ -7179,7 +7281,8 @@ async def give_exp(ctx, target: str, amount: int = 0):
                 for user_row in all_users:
                     try:
                         user_id = user_row['user_id']
-                        user_data = await ctx.bot.get_or_create_user(user_id, str(user_id))
+                        user_data = await ctx.bot.get_or_create_user(
+                            user_id, str(user_id))
 
                         # Check if user has an active beast
                         if not user_data.active_beast_id:
@@ -7204,8 +7307,10 @@ async def give_exp(ctx, target: str, amount: int = 0):
                         # Give XP to active beast only
                         if active_beast:
                             old_level = active_beast.stats.level
-                            level_ups = active_beast.stats.add_exp(amount, active_beast.rarity)
-                            await ctx.bot.db.update_beast(active_beast_id, active_beast)
+                            level_ups = active_beast.stats.add_exp(
+                                amount, active_beast.rarity)
+                            await ctx.bot.db.update_beast(
+                                active_beast_id, active_beast)
 
                             users_updated += 1
                             if level_ups:
@@ -7215,37 +7320,45 @@ async def give_exp(ctx, target: str, amount: int = 0):
 
                         # Progress update every 25 users
                         if users_updated % 25 == 0:
-                            print(f"📊 Processed {users_updated} users with active beasts")
+                            print(
+                                f"📊 Processed {users_updated} users with active beasts"
+                            )
 
                     except Exception as e:
-                        print(f"❌ Error processing user {user_row['user_id']}: {e}")
+                        print(
+                            f"❌ Error processing user {user_row['user_id']}: {e}"
+                        )
                         continue
 
                 # Success message
                 embed = discord.Embed(
                     title="✅ Mass XP Distribution Complete!",
-                    description=f"Successfully distributed **{amount:,} XP** to active beasts!",
+                    description=
+                    f"Successfully distributed **{amount:,} XP** to active beasts!",
                     color=0x00FF00)
 
-                embed.add_field(name="📊 Distribution Stats",
-                                value=f"**Active Beasts Updated:** {users_updated:,}\n"
-                                      f"**Total Level-Ups:** {total_level_ups:,}\n"
-                                      f"**Total XP Distributed:** {amount * users_updated:,}",
-                                inline=True)
+                embed.add_field(
+                    name="📊 Distribution Stats",
+                    value=f"**Active Beasts Updated:** {users_updated:,}\n"
+                    f"**Total Level-Ups:** {total_level_ups:,}\n"
+                    f"**Total XP Distributed:** {amount * users_updated:,}",
+                    inline=True)
 
-                embed.add_field(name="⏭️ Users Skipped",
-                                value=f"**No Active Beast:** {users_skipped_no_active:,}\n"
-                                      f"**No Beasts:** {users_skipped_no_beasts:,}\n"
-                                      f"**Total Processed:** {len(all_users):,}",
-                                inline=True)
+                embed.add_field(
+                    name="⏭️ Users Skipped",
+                    value=f"**No Active Beast:** {users_skipped_no_active:,}\n"
+                    f"**No Beasts:** {users_skipped_no_beasts:,}\n"
+                    f"**Total Processed:** {len(all_users):,}",
+                    inline=True)
 
                 embed.add_field(name="🎁 Gift Details",
                                 value=f"**XP Per Active Beast:** {amount:,}\n"
-                                      f"**Reason:** Admin Gift\n"
-                                      f"**Target:** Active Beasts Only",
+                                f"**Reason:** Admin Gift\n"
+                                f"**Target:** Active Beasts Only",
                                 inline=False)
 
-                embed.set_footer(text=f"Mass XP distribution by {ctx.author.display_name}")
+                embed.set_footer(
+                    text=f"Mass XP distribution by {ctx.author.display_name}")
 
             else:
                 embed = discord.Embed(
@@ -7266,12 +7379,14 @@ async def give_exp(ctx, target: str, amount: int = 0):
         if not ctx.message.mentions:
             embed = discord.Embed(
                 title="❌ No User Mentioned",
-                description="Please mention a user to give XP to, or use 'all' for everyone.",
+                description=
+                "Please mention a user to give XP to, or use 'all' for everyone.",
                 color=0xFF0000)
-            embed.add_field(name="Usage Examples",
-                            value=f"`{ctx.bot.config.prefix}givexp @username 1000`\n"
-                                  f"`{ctx.bot.config.prefix}givexp all 2000`",
-                            inline=False)
+            embed.add_field(
+                name="Usage Examples",
+                value=f"`{ctx.bot.config.prefix}givexp @username 1000`\n"
+                f"`{ctx.bot.config.prefix}givexp all 2000`",
+                inline=False)
             await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
 
@@ -7279,14 +7394,16 @@ async def give_exp(ctx, target: str, amount: int = 0):
         user_id = target_member.id
 
         # Get user data
-        user_data = await ctx.bot.get_or_create_user(user_id, str(target_member))
+        user_data = await ctx.bot.get_or_create_user(user_id,
+                                                     str(target_member))
 
         # Check if user has an active beast
         if not user_data.active_beast_id:
             embed = discord.Embed(
                 title="❌ No Active Beast",
-                description=f"**{target_member.display_name}** doesn't have an active beast set.\n"
-                           f"They need to use `{ctx.bot.config.prefix}active <beast_id>` first.",
+                description=
+                f"**{target_member.display_name}** doesn't have an active beast set.\n"
+                f"They need to use `{ctx.bot.config.prefix}active <beast_id>` first.",
                 color=0xFF0000)
             await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
@@ -7296,7 +7413,8 @@ async def give_exp(ctx, target: str, amount: int = 0):
         if not user_beasts:
             embed = discord.Embed(
                 title="❌ No Beasts Found",
-                description=f"**{target_member.display_name}** doesn't have any beasts.",
+                description=
+                f"**{target_member.display_name}** doesn't have any beasts.",
                 color=0xFF0000)
             await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
@@ -7313,8 +7431,9 @@ async def give_exp(ctx, target: str, amount: int = 0):
         if not active_beast:
             embed = discord.Embed(
                 title="❌ Active Beast Not Found",
-                description=f"**{target_member.display_name}**'s active beast couldn't be found.\n"
-                           f"Their active beast ID might be invalid.",
+                description=
+                f"**{target_member.display_name}**'s active beast couldn't be found.\n"
+                f"Their active beast ID might be invalid.",
                 color=0xFF0000)
             await ctx.bot.safe_send_message(ctx.channel, embed=embed)
             return
@@ -7327,49 +7446,57 @@ async def give_exp(ctx, target: str, amount: int = 0):
         # Success embed
         embed = discord.Embed(
             title="🎁 XP Gift Delivered!",
-            description=f"**{target_member.display_name}**'s active beast received **{amount:,} XP**!",
+            description=
+            f"**{target_member.display_name}**'s active beast received **{amount:,} XP**!",
             color=active_beast.rarity.color)
 
-        embed.add_field(name="🐉 Active Beast",
-                        value=f"**{active_beast.name}** {active_beast.rarity.emoji}\n"
-                              f"Level {old_level} → {active_beast.stats.level}",
-                        inline=True)
+        embed.add_field(
+            name="🐉 Active Beast",
+            value=f"**{active_beast.name}** {active_beast.rarity.emoji}\n"
+            f"Level {old_level} → {active_beast.stats.level}",
+            inline=True)
 
         embed.add_field(name="⚡ XP Details",
                         value=f"**XP Received:** {amount:,}\n"
-                              f"**Current XP:** {active_beast.stats.exp:,}\n"
-                              f"**Power Level:** {active_beast.power_level:,}",
+                        f"**Current XP:** {active_beast.stats.exp:,}\n"
+                        f"**Power Level:** {active_beast.power_level:,}",
                         inline=True)
 
         if level_ups:
             levels_gained = len(level_ups)
-            embed.add_field(name="🎉 Level-Up Achievement!",
-                            value=f"**{active_beast.name}** gained **{levels_gained} level(s)**!\n"
-                                  "🌟 The XP gift triggered level-ups!",
-                            inline=False)
+            embed.add_field(
+                name="🎉 Level-Up Achievement!",
+                value=
+                f"**{active_beast.name}** gained **{levels_gained} level(s)**!\n"
+                "🌟 The XP gift triggered level-ups!",
+                inline=False)
 
             # Show stat gains from level-ups
             if level_ups:
-                last_gains = level_ups[-1][2]  # Get stat gains from last level-up
+                last_gains = level_ups[-1][
+                    2]  # Get stat gains from last level-up
                 stat_text = []
                 for stat, gain in last_gains.items():
                     if not stat.startswith('bonus_'):
                         stat_text.append(f"{stat.title()}: +{gain}")
 
                 if stat_text:
-                    embed.add_field(name="📈 Recent Stat Gains",
-                                    value="\n".join(stat_text[:4]),  # Show first 4 stats
-                                    inline=True)
+                    embed.add_field(
+                        name="📈 Recent Stat Gains",
+                        value="\n".join(stat_text[:4]),  # Show first 4 stats
+                        inline=True)
         else:
-            embed.add_field(name="📊 No Level-Up",
-                            value=f"**{active_beast.name}** received XP but didn't level up yet.\n"
-                                  f"Keep growing stronger! 💪",
-                            inline=False)
+            embed.add_field(
+                name="📊 No Level-Up",
+                value=
+                f"**{active_beast.name}** received XP but didn't level up yet.\n"
+                f"Keep growing stronger! 💪",
+                inline=False)
 
-        embed.set_footer(text=f"XP gift from {ctx.author.display_name} • Active beast only")
+        embed.set_footer(
+            text=f"XP gift from {ctx.author.display_name} • Active beast only")
 
         await ctx.bot.safe_send_message(ctx.channel, embed=embed)
-
 
 
 @commands.command(name='adoption_status', aliases=['adoptstatus'])
@@ -7533,18 +7660,20 @@ async def migrate_xp_curve(ctx):
 
     await ctx.bot.safe_edit_message(message, embed=embed)
 
+
 @commands.command(name='migrate_stats_enhanced')
 @commands.has_permissions(administrator=True)
 async def migrate_beast_stats_enhanced(ctx):
     """Fix beast stats while preserving sacrifice/spar boosts (admin only)"""
     embed = discord.Embed(
         title="⚠️ Enhanced Beast Stat Migration",
-        description="This will recalculate ALL beast stats while **preserving**:\n"
-                    "✅ Sacrifice stat boosts\n"
-                    "✅ Spar training gains\n" 
-                    "✅ All extra stat bonuses\n\n"
-                    "**This fixes weak high-level beasts without losing boosts!**\n\n"
-                    "React with ✅ to confirm or ❌ to cancel.",
+        description=
+        "This will recalculate ALL beast stats while **preserving**:\n"
+        "✅ Sacrifice stat boosts\n"
+        "✅ Spar training gains\n"
+        "✅ All extra stat bonuses\n\n"
+        "**This fixes weak high-level beasts without losing boosts!**\n\n"
+        "React with ✅ to confirm or ❌ to cancel.",
         color=0xFF8800)
 
     message = await ctx.bot.safe_send_message(ctx.channel, embed=embed)
@@ -7552,16 +7681,19 @@ async def migrate_beast_stats_enhanced(ctx):
     await ctx.bot.safe_add_reaction(message, "❌")
 
     def check(reaction, user):
-        return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"] 
+        return (user == ctx.author and str(reaction.emoji) in ["✅", "❌"]
                 and reaction.message.id == message.id)
 
     try:
-        reaction, user = await ctx.bot.wait_for('reaction_add', timeout=30.0, check=check)
+        reaction, user = await ctx.bot.wait_for('reaction_add',
+                                                timeout=30.0,
+                                                check=check)
 
         if str(reaction.emoji) == "✅":
             embed = discord.Embed(
                 title="🔄 Enhanced Migration in Progress...",
-                description="Recalculating stats while preserving all boosts...",
+                description=
+                "Recalculating stats while preserving all boosts...",
                 color=0xFFAA00)
             await ctx.bot.safe_edit_message(message, embed=embed)
 
@@ -7570,29 +7702,30 @@ async def migrate_beast_stats_enhanced(ctx):
             if success:
                 embed = discord.Embed(
                     title="✅ Enhanced Migration Complete!",
-                    description="All beast stats fixed **with boosts preserved**!\n"
-                               "🎯 Sacrifice boosts: **Preserved**\n"
-                               "💪 Spar training gains: **Preserved**\n"
-                               "⚡ High-level stats: **Fixed**",
+                    description=
+                    "All beast stats fixed **with boosts preserved**!\n"
+                    "🎯 Sacrifice boosts: **Preserved**\n"
+                    "💪 Spar training gains: **Preserved**\n"
+                    "⚡ High-level stats: **Fixed**",
                     color=0x00FF00)
             else:
                 embed = discord.Embed(
                     title="❌ Migration Failed",
-                    description="Enhanced migration encountered errors. Check logs.",
+                    description=
+                    "Enhanced migration encountered errors. Check logs.",
                     color=0xFF0000)
         else:
-            embed = discord.Embed(
-                title="❌ Migration Cancelled", 
-                description="Enhanced migration cancelled.",
-                color=0x808080)
+            embed = discord.Embed(title="❌ Migration Cancelled",
+                                  description="Enhanced migration cancelled.",
+                                  color=0x808080)
 
     except asyncio.TimeoutError:
-        embed = discord.Embed(
-            title="⏰ Migration Timeout",
-            description="Migration confirmation timed out.",
-            color=0x808080)
+        embed = discord.Embed(title="⏰ Migration Timeout",
+                              description="Migration confirmation timed out.",
+                              color=0x808080)
 
     await ctx.bot.safe_edit_message(message, embed=embed)
+
 
 @commands.command(name='setchannel')
 @commands.has_permissions(administrator=True)
