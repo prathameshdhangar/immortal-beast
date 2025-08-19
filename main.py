@@ -552,7 +552,7 @@ async def fix_all_beast_stats_preserve_boosts(bot):
                     # ✅ FIXED: Set final level and remaining XP correctly
                     beast.stats.level = level
                     beast.stats.exp = remaining_xp
-
+                    beast.stats.add_exp(0, beast.rarity)
                     # ✅ CALCULATE and PRESERVE boosts
                     boosts = {}
                     for stat in ['max_hp', 'attack', 'defense', 'speed']:
@@ -572,8 +572,9 @@ async def fix_all_beast_stats_preserve_boosts(bot):
                     beast.stats.attack += boosts['attack']
                     beast.stats.defense += boosts['defense']
                     beast.stats.speed += boosts['speed']
-                    beast.stats.hp = min(beast.stats.hp, beast.stats.max_hp)
-
+                    beast.stats.max_hp = max(beast.stats.max_hp, preserved_stats['hp'])
+                    beast.stats.hp = preserved_stats['hp']
+                    
                     await bot.db.update_beast(beast_id, beast)
                     total_beasts_fixed += 1
 
