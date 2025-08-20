@@ -572,9 +572,10 @@ async def fix_all_beast_stats_preserve_boosts(bot):
                     beast.stats.attack += boosts['attack']
                     beast.stats.defense += boosts['defense']
                     beast.stats.speed += boosts['speed']
-                    beast.stats.max_hp = max(beast.stats.max_hp, preserved_stats['hp'])
+                    beast.stats.max_hp = max(beast.stats.max_hp,
+                                             preserved_stats['hp'])
                     beast.stats.hp = preserved_stats['hp']
-                    
+
                     await bot.db.update_beast(beast_id, beast)
                     total_beasts_fixed += 1
 
@@ -2775,7 +2776,7 @@ class ImmortalBeastsBot(commands.Bot):
         return best_beast
 
     async def setup_hook(self):
-        """Enhanced setup with automatic restoration - MESSAGE XP ONLY"""
+        """Enhanced setup with automatic restoration and consistent backup scheduling"""
         # Check if database exists, if not try to restore from cloud
         db_path = Path(self.config.database_path)
         if not db_path.exists() or db_path.stat().st_size == 0:
@@ -2799,19 +2800,18 @@ class ImmortalBeastsBot(commands.Bot):
         await self.add_cog(RateLimitConfig(self, self.guild_rate_manager))
         self.logger.info("Rate limiting cog loaded")
 
-        # Update backup task interval based on config
-        self.enhanced_backup_task.change_interval(
-            hours=self.config.backup_interval_hours)
+        # ENHANCED: Start consistent backup system
         if self.config.backup_enabled:
-            self.enhanced_backup_task.start()
             self.logger.info(
-                f"Enhanced backup task started (every {self.config.backup_interval_hours}h, keep {self.config.backup_retention_count})"
+                f"Starting enhanced backup system (every {self.config.backup_interval_hours}h)"
             )
+            self.enhanced_backup_task.change_interval(
+                hours=self.config.backup_interval_hours)
+            self.enhanced_backup_task.start()
         else:
-            self.logger.info("Backup task disabled")
+            self.logger.info("Backup system disabled in configuration")
 
         # Start background tasks (NO XP DISTRIBUTION TASK!)
-        # self.xp_distribution_task.start()  # ← REMOVE THIS LINE!
         self.spawn_task.start()
         self.logger.info("Background tasks started (message-based XP only)")
 
@@ -3102,20 +3102,82 @@ class ImmortalBeastsBot(commands.Bot):
 
     @tasks.loop(hours=6)  # This will be updated in setup_hook
     async def enhanced_backup_task(self):
-        """Enhanced backup task with cloud storage"""
+        """Enhanced backup task with cloud storage and error handling"""
         if not self.config.backup_enabled:
+            self.logger.info("Backup disabled, skipping scheduled backup")
             return
 
         try:
+            self.logger.info("🔄 Starting scheduled backup...")
             backup_file = await self.safe_api_call(
                 self.backup_manager.create_backup_with_cloud_storage)
+
             if backup_file:
-                self.logger.info(f"Enhanced backup completed: {backup_file}")
+                self.logger.info(
+                    f"✅ Scheduled backup completed successfully: {backup_file}"
+                )
+
+                # Log next backup time
+                next_backup = datetime.datetime.now() + datetime.timedelta(
+                    hours=self.config.backup_interval_hours)
+                self.logger.info(
+                    f"📅 Next backup scheduled for: {next_backup.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
             else:
-                self.logger.error("Enhanced backup failed")
+                self.logger.error(
+                    "❌ Scheduled backup failed - no file created")
 
         except Exception as e:
-            self.logger.error(f"Enhanced backup task failed: {e}")
+            self.logger.error(f"❌ Scheduled backup task failed: {e}")
+            # Don't let backup failures crash the task
+
+    @enhanced_backup_task.before_loop
+    async def before_backup_task(self):
+        """Wait for bot to be ready and calculate proper start time"""
+        await self.wait_until_ready()
+
+        # Calculate next backup time based on a fixed schedule
+        now = datetime.datetime.now()
+
+        # Set backup times to: 00:00, 06:00, 12:00, 18:00 daily (every 6 hours)
+        backup_hours = [0, 6, 12, 18]
+
+        # Find the next backup hour
+        current_hour = now.hour
+        next_backup_hour = None
+
+        for hour in backup_hours:
+            if hour > current_hour:
+                next_backup_hour = hour
+                break
+
+        if next_backup_hour is None:
+            # Next backup is tomorrow at 00:00
+            next_backup_hour = backup_hours[0]
+            now = now + datetime.timedelta(days=1)
+
+        # Calculate exact next backup time
+        next_backup = now.replace(hour=next_backup_hour,
+                                  minute=0,
+                                  second=0,
+                                  microsecond=0)
+        wait_seconds = (next_backup - datetime.datetime.now()).total_seconds()
+
+        if wait_seconds > 0:
+            self.logger.info(
+                f"⏰ Waiting {wait_seconds/3600:.1f} hours until first backup at {next_backup.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            await asyncio.sleep(wait_seconds)
+
+        self.logger.info("🔄 Backup task ready to start regular intervals")
+
+    @enhanced_backup_task.after_loop
+    async def after_backup_task(self):
+        """Handle backup task completion/cancellation"""
+        if self.enhanced_backup_task.is_being_cancelled():
+            self.logger.info("🛑 Backup task was cancelled")
+        else:
+            self.logger.info("✅ Backup task completed")
 
     @tasks.loop(minutes=1)
     async def spawn_task(self):
@@ -3672,11 +3734,19 @@ async def sacrifice_beast(ctx, beast_id: int):
 
             if grant_stat_boosts and active_beast:
                 stat_boosts = calculate_percentage_stat_boosts(target_beast)
+
+                # FIXED: Special handling for HP stats to prevent overflow
                 for stat, boost_value in stat_boosts.items():
-                    if hasattr(active_beast.stats, stat):
+                    if stat == 'hp':
+                        # Special handling for HP: boost max_hp and set current hp to new max
+                        active_beast.stats.max_hp += boost_value
+                        active_beast.stats.hp = active_beast.stats.max_hp  # Full heal to new max
+                    elif hasattr(active_beast.stats, stat):
+                        # Normal handling for other stats
                         setattr(
                             active_beast.stats, stat,
                             getattr(active_beast.stats, stat) + boost_value)
+
                 await ctx.bot.db.update_beast(user.active_beast_id,
                                               active_beast)
                 user.record_sacrifice_with_stats()
@@ -4780,6 +4850,67 @@ async def remove_xp_channel(ctx,
             title="⚠️ Not Found",
             description=f"{channel.mention} is not in the XP channel list",
             color=0xFFAA00)
+
+    await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+
+
+@commands.command(name='backupschedule')
+@commands.has_permissions(administrator=True)
+async def backup_schedule_status(ctx):
+    """Show backup schedule and next backup time"""
+    embed = discord.Embed(title="📅 Backup Schedule Status", color=0x00AAFF)
+
+    if not ctx.bot.config.backup_enabled:
+        embed.add_field(name="❌ Status",
+                        value="Backup system disabled",
+                        inline=False)
+        await ctx.bot.safe_send_message(ctx.channel, embed=embed)
+        return
+
+    # Calculate next backup time
+    now = datetime.datetime.now()
+    backup_hours = [0, 6, 12, 18]  # Every 6 hours starting at midnight
+
+    current_hour = now.hour
+    next_backup_hour = None
+
+    for hour in backup_hours:
+        if hour > current_hour:
+            next_backup_hour = hour
+            break
+
+    if next_backup_hour is None:
+        next_backup_hour = backup_hours[0]
+        now = now + datetime.timedelta(days=1)
+
+    next_backup = now.replace(hour=next_backup_hour,
+                              minute=0,
+                              second=0,
+                              microsecond=0)
+    hours_until = (next_backup -
+                   datetime.datetime.now()).total_seconds() / 3600
+
+    embed.add_field(name="✅ Status", value="Backup system active", inline=True)
+    embed.add_field(name="⏰ Interval",
+                    value=f"{ctx.bot.config.backup_interval_hours} hours",
+                    inline=True)
+    embed.add_field(name="📅 Schedule",
+                    value="00:00, 06:00, 12:00, 18:00 daily",
+                    inline=True)
+    embed.add_field(
+        name="⏭️ Next Backup",
+        value=
+        f"{next_backup.strftime('%Y-%m-%d %H:%M:%S')}\n({hours_until:.1f} hours)",
+        inline=False)
+
+    # Show recent backups
+    storage_info = ctx.bot.db.get_storage_usage()
+    if storage_info['total_files'] > 0:
+        embed.add_field(
+            name="📊 Recent Activity",
+            value=f"Total backups: {storage_info['total_files']}\n"
+            f"Storage used: {storage_info['total_size_mb']:.1f} MB",
+            inline=True)
 
     await ctx.bot.safe_send_message(ctx.channel, embed=embed)
 
@@ -8267,6 +8398,7 @@ def main():
     bot.add_command(migrate_xp_curve)
     bot.add_command(migrate_beast_stats_enhanced)
     bot.add_command(give_exp)
+    bot.add_command(backup_schedule_status)
 
     # RETRY LOGIC INSIDE THE FUNCTION WHERE VARIABLES ARE AVAILABLE
     max_retries = 3
